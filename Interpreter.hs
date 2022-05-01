@@ -42,7 +42,14 @@ evalBool e = do
   v <- evalExpr e
   case v of
     VBool b -> return b
-    _ -> throwError "Expected Bool." -- todo position
+    _ -> throwError "Expected Boolean" -- todo position
+
+evalInteger :: Expr -> Interpreter Integer
+evalInteger e = do
+  v <- evalExpr e
+  case v of
+    VInt n -> return n
+    _ -> throwError "Expected Integer" -- todo position    
 
 -------------- wydzielić te głupoty nudne do osobnego modułu ----------------------------------
 
@@ -64,11 +71,10 @@ relOpToIntegerFunction (GE _) a b = a >= b
 relOpToIntegerFunction (EQU _) a b = a == b
 relOpToIntegerFunction (NE _) a b = a /= b
 
-
-relOpToBooleanFunction :: RelOp -> (Bool -> Bool -> Bool)
-relOpToBooleanFunction (EQU _) a b = a == b
-relOpToBooleanFunction (NE _) a b = a /= b
-relOpToBooleanFunction _ _ _ = error "Illegal comparison of Booleans" -- zwykły error, ale do tego i tak nie dojdzie przez wcześniejsze sprawdzenie
+relOpToBooleanFunction :: RelOp -> Interpreter (Bool -> Bool -> Bool)
+relOpToBooleanFunction (EQU _) = return equals where equals a b = a == b
+relOpToBooleanFunction (NE _) = return notEquals where notEquals a b = a /= b
+relOpToBooleanFunction _ = throwError "Illegal comparison of Booleans"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -82,7 +88,7 @@ evalExpr (ELitFalse _) = return (VBool False)
 evalExpr (EVar p ident) = do
     vars <- ask
     case DataMap.lookup ident vars of
-        Just (VarInfo v _) -> return v
+        Just (VarInfo v _) -> return v -- todo czy ma sens z funkcjami? chyba musi być EApp
         _ -> throwError "Undefined variable" -- todo position
 
 evalExpr (EApp p fIdent args) = do
@@ -125,17 +131,33 @@ evalExpr (ERel p e1 op e2) = do
         (VInt a) -> case e2' of
             (VInt b) -> return (VBool $ relOpToIntegerFunction op a b)
             _ -> throwError "Integer operation on non-integer" -- todo position, chyba wyjdzie w TypeCheckerze
-        (VBool a) -> case e2' of
-            (VBool b) -> return (VBool $ relOpToBooleanFunction op a b)
-            _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
+        (VBool a) -> do
+            op' <- relOpToBooleanFunction op
+            case e2' of
+                (VBool b) -> return (VBool $ op' a b)
+                _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
         _ -> throwError "Integer/Boolean operation on non-integer/non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
-    -- | ERel a (Expr' a) (RelOp' a) (Expr' a)
-    -- | EAnd a (Expr' a) (Expr' a)
-    -- | EOr a (Expr' a) (Expr' a)
-evalExpr _ = undefined
+
+evalExpr (EAnd p e1 e2) = do
+    e1' <- evalExpr e1
+    e2' <- evalExpr e2
+    case e1' of
+        (VBool a) -> 
+            case e2' of
+                (VBool b) -> return (VBool $ a && b)
+                _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
+        _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
+evalExpr (EOr p e1 e2) = do
+    e1' <- evalExpr e1
+    e2' <- evalExpr e2
+    case e1' of
+        (VBool a) -> 
+            case e2' of
+                (VBool b) -> return (VBool $ a || b)
+                _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
+        _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
 
 
--- Executes the program
 execProgram :: Program -> IO ()
 execProgram prog@(Program pos d) = do
     return ()
@@ -150,7 +172,6 @@ execProgram prog@(Program pos d) = do
 --         Left err -> hPutStrLn stderr $ "Runtime Error: " ++ err
 --         Right _ -> return ()
 
--- -- Executes the program
 -- exec :: Program -> IO ()
 -- exec program@(Program d s) = do
 --   typeResult <- runExceptT $ execType program
