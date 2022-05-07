@@ -4,7 +4,7 @@ import Control.Monad.Reader
 import Data.Map as Map
 import AbsFlatwhite
 import Control.Monad.State (execState)
-import Expressions (evalExpr)
+import Expressions (evalExpr, evalBool)
 import Types
 
 -- todo printInt, printBool i printString, pewnie oddzielny moduł
@@ -35,8 +35,37 @@ execStmt (ConstDecl p t (x:xs)) interpreter = do
     interpreter' <- execStmt (ConstDecl p t [x]) interpreter -- todo idk czy to modyfikuje stan tak jak powinno
     execStmt (ConstDecl p t xs) interpreter
 
+execStmt (Empty p) _ = return ()
+execStmt (BStmt p block) interpreter = undefined
 
---execStmt (Decl p t x:xs) = undefined
+execStmt (Ass p ident expr) interpreter = do
+    vars <- ask
+    case Map.lookup ident vars of
+        (Just _) -> do 
+            val <- evalExpr expr
+            local (Map.insert ident (VarInfo val False)) interpreter -- typ w typechekerze, const sprawdzenie w typechekerze
+        Nothing -> throwError $  "Assignment to undeclared variable: " ++ show ident ++ " at " ++ show p --chyba wyjdzie w TypeCheckerze ????
+
+execStmt (Cond p expr stmt) interpreter = do
+    bool <- evalBool expr p
+    case bool of
+        True -> execStmt stmt interpreter
+        False -> return ()
+
+execStmt (CondElse p expr stmt1 stmt2) interpreter = do
+    bool <- evalBool expr p
+    case bool of
+        True -> execStmt stmt1 interpreter
+        False -> execStmt stmt2 interpreter
+
+execStmt w@(While p expr stmt) interpreter = do
+    bool <- evalBool expr p
+    case bool of
+        True -> do 
+            interpreter' <- execStmt stmt interpreter -- todo idk czy modyfikuje stan
+            execStmt w interpreter
+        False -> return ()
+
 execStmt _ interpreter = undefined
 
 execProgram :: Program -> IO ()

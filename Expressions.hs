@@ -8,19 +8,19 @@ import Types
 
 -- todo printInt, printBool i printString, pewnie oddzielny moduł
 
--- evalBool :: Expr -> BNFC'Position -> Interpreter Bool
--- evalBool e p = do
---   v <- evalExpr e
---   case v of
---     VBool b -> return b
---     _ -> throwError $ "Expected Boolean at " ++ show p
+evalBool :: Expr -> BNFC'Position -> Interpreter Bool
+evalBool e p = do
+  v <- evalExpr e
+  case v of
+    VBool b -> return b
+    _ -> throwError $ "Expected Boolean at " ++ show p
 
--- evalInteger :: Expr -> BNFC'Position -> Interpreter Integer
--- evalInteger e p = do
---   v <- evalExpr e
---   case v of
---     VInt n -> return n
---     _ -> throwError $ "Expected Integer at " ++ show p
+evalInteger :: Expr -> BNFC'Position -> Interpreter Integer
+evalInteger e p = do
+  v <- evalExpr e
+  case v of
+    VInt n -> return n
+    _ -> throwError $ "Expected Integer at " ++ show p
 
 
 mulOpToFunction :: MulOp -> (Integer -> Integer -> Integer)
