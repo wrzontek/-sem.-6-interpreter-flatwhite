@@ -1,162 +1,43 @@
 module Interpreter where
 import Control.Monad.Except
 import Control.Monad.Reader
-import qualified Data.Map as DataMap
+import Data.Map as Map
 import AbsFlatwhite
+import Control.Monad.State (execState)
+import Expressions (evalExpr)
+import Types
 
 -- todo printInt, printBool i printString, pewnie oddzielny moduł
 
-data Var =
-    VInt Integer
-    | VBool Bool
-    | VString String
-    | VFunction ([Expr] -> Var) -- todo
-    | VVoid
+noInitVar :: Type -> Bool -> VarInfo
+noInitVar (Int _) readonly = VarInfo (VInt 0) readonly
+noInitVar (Str _) readonly = VarInfo (VString "") readonly
+noInitVar (Bool _) readonly = VarInfo (VBool False) readonly
+noInitVar (Void _) readonly = VarInfo VVoid readonly
+noInitVar Fun {} readonly = error "cannot declare function as variable"
 
-instance Eq Var where
-  (VInt x) == (VInt y) = x == y
-  (VBool x) == (VBool y) = x == y
-  (VString x) == (VString y) = x == y
-  VVoid == VVoid = True
-  _ == _ = False
+execStmt :: Stmt -> Interpreter () -> Interpreter ()
+execStmt (Decl p t [NoInit p' x]) interpreter = local (Map.insert x (noInitVar t False)) interpreter -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
+execStmt (Decl p t [Init p' x expr]) interpreter = do
+    -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
+    var <- evalExpr expr -- todo typecheckerować to czy coś idk
+    local (Map.insert x (VarInfo var False)) interpreter
+execStmt (Decl p t (x:xs)) interpreter = do
+    interpreter' <- execStmt (Decl p t [x]) interpreter -- todo idk czy to modyfikuje stan tak jak powinno
+    execStmt (Decl p t xs) interpreter
 
-instance Show Var where
-  show (VInt n) = show n
-  show (VBool b) = show b
-  show (VString s) = s
-  show (VFunction _) = "function"
-  show VVoid = "void"
-
-data VarInfo = VarInfo Var Bool -- variable and whether or not it's readonly
-
--- instance Eq VarInfo where
---     (VarInfo v b) == (VarInfo v' b') = (v == v') && (b == b')
-
-type Env = DataMap.Map Ident VarInfo
-type IExcept = ExceptT String IO
-type Interpreter = ReaderT Env IExcept
+execStmt (ConstDecl p t [NoInit p' x]) interpreter = local (Map.insert x (noInitVar t True)) interpreter -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
+execStmt (ConstDecl p t [Init p' x expr]) interpreter = do
+    -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
+    var <- evalExpr expr -- todo typecheckerować to czy coś idk
+    local (Map.insert x (VarInfo var True)) interpreter
+execStmt (ConstDecl p t (x:xs)) interpreter = do
+    interpreter' <- execStmt (ConstDecl p t [x]) interpreter -- todo idk czy to modyfikuje stan tak jak powinno
+    execStmt (ConstDecl p t xs) interpreter
 
 
-evalBool :: Expr -> Interpreter Bool
-evalBool e = do
-  v <- evalExpr e
-  case v of
-    VBool b -> return b
-    _ -> throwError "Expected Boolean" -- todo position
-
-evalInteger :: Expr -> Interpreter Integer
-evalInteger e = do
-  v <- evalExpr e
-  case v of
-    VInt n -> return n
-    _ -> throwError "Expected Integer" -- todo position    
-
--------------- wydzielić te głupoty nudne do osobnego modułu ----------------------------------
-
-mulOpToFunction :: MulOp -> (Integer -> Integer -> Integer)
-mulOpToFunction (Times _) a b = a * b
-mulOpToFunction (Div _) a b = div a b
-mulOpToFunction (Mod _) a b = mod a b 
-
-addOpToFunction :: AddOp -> (Integer -> Integer -> Integer)
-addOpToFunction (Plus _) a b = a + b
-addOpToFunction (Minus _) a b = a - b
-
-relOpToIntegerFunction :: RelOp -> (Integer -> Integer -> Bool)
--- LTH a | LE a | GTH a | GE a | EQU a | NE a
-relOpToIntegerFunction (LTH _) a b = a < b
-relOpToIntegerFunction (LE _) a b = a <= b
-relOpToIntegerFunction (GTH _) a b = a > b
-relOpToIntegerFunction (GE _) a b = a >= b
-relOpToIntegerFunction (EQU _) a b = a == b
-relOpToIntegerFunction (NE _) a b = a /= b
-
-relOpToBooleanFunction :: RelOp -> Interpreter (Bool -> Bool -> Bool)
-relOpToBooleanFunction (EQU _) = return equals where equals a b = a == b
-relOpToBooleanFunction (NE _) = return notEquals where notEquals a b = a /= b
-relOpToBooleanFunction _ = throwError "Illegal comparison of Booleans"
-
-----------------------------------------------------------------------------------------------------
-
-
-evalExpr :: Expr -> Interpreter Var
-evalExpr (ELitInt _ n) = return (VInt n)
-evalExpr (EString _ s) = return (VString s)
-evalExpr (ELitTrue _)  = return (VBool True)
-evalExpr (ELitFalse _) = return (VBool False)
-
-evalExpr (EVar p ident) = do
-    vars <- ask
-    case DataMap.lookup ident vars of
-        Just (VarInfo v _) -> return v -- todo czy ma sens z funkcjami? chyba musi być EApp
-        _ -> throwError "Undefined variable" -- todo position
-
-evalExpr (EApp p fIdent args) = do
-    vars <- ask
-    case DataMap.lookup fIdent vars of
-        Just (VarInfo (VFunction f) p') -> return $ f args
-        _ -> throwError "Undefined function" -- todo position
-
-evalExpr (Neg p e) = do
-    e' <- evalExpr e
-    case e' of
-        (VInt n) -> return $ VInt $ negate n
-        _ -> throwError "Cannot negate expression" -- todo position, chyba wyjdzie w TypeCheckerze
-evalExpr (Not p e) = do
-    e' <- evalExpr e
-    case e' of
-        (VBool b) -> return $ VBool $ not b
-        _ -> throwError "Cannot 'not' expression" -- todo position i język angielski, chyba wyjdzie w TypeCheckerze
-evalExpr (EMul p e1 op e2) = do
-    e1' <- evalExpr e1
-    e2' <- evalExpr e2
-    case e1' of
-        (VInt a) -> case e2' of
-            (VInt b) -> return (VInt $ mulOpToFunction op a b)
-            _ -> throwError "Integer operation on non-integer" -- todo position, chyba wyjdzie w TypeCheckerze
-        _ -> throwError "Integer operation on non-integer" -- todo position, chyba wyjdzie w TypeCheckerze
-evalExpr (EAdd p e1 op e2) = do
-    e1' <- evalExpr e1
-    e2' <- evalExpr e2
-    case e1' of
-        (VInt a) -> case e2' of
-            (VInt b) -> return (VInt $ addOpToFunction op a b)
-            _ -> throwError "Integer operation on non-integer" -- todo position, chyba wyjdzie w TypeCheckerze
-        _ -> throwError "Integer operation on non-integer" -- todo position, chyba wyjdzie w TypeCheckerze
-
-evalExpr (ERel p e1 op e2) = do
-    e1' <- evalExpr e1
-    e2' <- evalExpr e2
-    case e1' of
-        (VInt a) -> case e2' of
-            (VInt b) -> return (VBool $ relOpToIntegerFunction op a b)
-            _ -> throwError "Integer operation on non-integer" -- todo position, chyba wyjdzie w TypeCheckerze
-        (VBool a) -> do
-            op' <- relOpToBooleanFunction op
-            case e2' of
-                (VBool b) -> return (VBool $ op' a b)
-                _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
-        _ -> throwError "Integer/Boolean operation on non-integer/non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
-
-evalExpr (EAnd p e1 e2) = do
-    e1' <- evalExpr e1
-    e2' <- evalExpr e2
-    case e1' of
-        (VBool a) -> 
-            case e2' of
-                (VBool b) -> return (VBool $ a && b)
-                _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
-        _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
-evalExpr (EOr p e1 e2) = do
-    e1' <- evalExpr e1
-    e2' <- evalExpr e2
-    case e1' of
-        (VBool a) -> 
-            case e2' of
-                (VBool b) -> return (VBool $ a || b)
-                _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
-        _ -> throwError "Boolean operation on non-boolean" -- todo position, chyba wyjdzie w TypeCheckerze
-
+--execStmt (Decl p t x:xs) = undefined
+execStmt _ interpreter = undefined
 
 execProgram :: Program -> IO ()
 execProgram prog@(Program pos d) = do
