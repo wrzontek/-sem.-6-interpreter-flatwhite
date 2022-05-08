@@ -1,15 +1,15 @@
 module Interpreter where
 import Control.Monad.Except
-import Control.Monad.Reader
 import Data.Map as Map
 import AbsFlatwhite
-import Control.Monad.State (execState)
+import Control.Monad.State ( modify, StateT (runStateT), MonadState (get) )
 import Expressions (evalExpr, evalBool, evalInteger, evalString, showPos)
 import Types
 import System.IO (stderr, hPutStrLn)
+import Control.Monad
 
 printString :: [Expr] -> BNFC'Position -> Interpreter Var
-printString [expr] p = do 
+printString [expr] p = do
     s <- evalString expr p
     liftIO $ putStr $ show s ++ "\n"
     return VVoid
@@ -20,7 +20,7 @@ printStringFunctionVarInfo :: VarInfo
 printStringFunctionVarInfo = VarInfo (VFunction printString) False
 
 printInt :: [Expr] -> BNFC'Position -> Interpreter Var
-printInt [expr] p = do 
+printInt [expr] p = do
     n <- evalInteger expr p
     liftIO $ putStr $ show n ++ "\n"
     return VVoid
@@ -31,7 +31,7 @@ printIntFunctionVarInfo :: VarInfo
 printIntFunctionVarInfo = VarInfo (VFunction printInt) False
 
 printBool :: [Expr] -> BNFC'Position -> Interpreter Var
-printBool [expr] p = do 
+printBool [expr] p = do
     b <- evalBool expr p
     liftIO $ putStr $ show b ++ "\n"
     return VVoid
@@ -49,70 +49,79 @@ noInitVar (Bool _) readonly = VarInfo (VBool False) readonly
 noInitVar (Void _) readonly = VarInfo VVoid readonly
 noInitVar Fun {} readonly = error "cannot declare function as variable"
 
-execStmt :: Stmt -> Interpreter () -> Interpreter ()
-execStmt (Decl p t []) interpreter = throwError $  "Empty declaration at " ++ showPos p
-execStmt (Decl p t [NoInit p' x]) interpreter = local (Map.insert x (noInitVar t False)) interpreter -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
-execStmt (Decl p t [Init p' x expr]) interpreter = do
+execStmt :: Stmt -> Interpreter ()
+execStmt (Decl p t []) = throwError $ "Empty declaration at " ++ showPos p
+execStmt (Decl p t [NoInit p' x]) = modify (Map.insert x (noInitVar t False)) -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
+execStmt (Decl p t [Init p' x expr]) = do
     -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
     var <- evalExpr expr -- todo typecheckerować to czy coś idk
-    local (Map.insert x (VarInfo var False)) interpreter
-execStmt (Decl p t (x:xs)) interpreter = do
-    execStmt (Decl p t xs) (execStmt (Decl p t [x]) interpreter) -- todo idk czy to modyfikuje stan tak jak powinno
+    modify (Map.insert x (VarInfo var False))
+execStmt (Decl p t (x:xs)) = do
+    execStmt (Decl p t [x])
+    execStmt (Decl p t xs)-- todo idk czy to modyfikuje stan tak jak powinno
 
-execStmt (ConstDecl p t []) interpreter = throwError $  "Empty declaration at " ++ showPos p
-execStmt (ConstDecl p t [NoInit p' x]) interpreter = local (Map.insert x (noInitVar t True)) interpreter -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
-execStmt (ConstDecl p t [Init p' x expr]) interpreter = do
+execStmt (ConstDecl p t []) = throwError $  "Empty declaration at " ++ showPos p
+execStmt (ConstDecl p t [NoInit p' x]) = modify (Map.insert x (noInitVar t True)) -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
+execStmt (ConstDecl p t [Init p' x expr]) = do
     -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
     var <- evalExpr expr -- todo typecheckerować to czy coś idk
-    local (Map.insert x (VarInfo var True)) interpreter
-execStmt (ConstDecl p t (x:xs)) interpreter = do
-    execStmt (ConstDecl p t xs) (execStmt (ConstDecl p t [x]) interpreter) -- todo idk czy to modyfikuje stan tak jak powinno
+    modify (Map.insert x (VarInfo var True))
+execStmt (ConstDecl p t (x:xs)) = do
+    execStmt (ConstDecl p t [x])
+    execStmt (ConstDecl p t xs) -- todo idk czy to modyfikuje stan tak jak powinno
 
-execStmt (Empty p) _ = return ()
-execStmt (BStmt p (Block p' [])) interpreter = return ()
-execStmt (BStmt p (Block p' (s:sx))) interpreter = do
-    execStmt s interpreter
-    execStmt (BStmt p (Block p' sx)) interpreter
-    --execStmt (BStmt p (Block p' sx)) $ execStmt s interpreter
+execStmt (Empty p) = return ()
+execStmt (BStmt p (Block p' [])) = return ()
+execStmt (BStmt p (Block p' (s:sx))) = do
+    execStmt s
+    execStmt (BStmt p (Block p' sx))
+    --execStmt (BStmt p (Block p' sx)) $ execStmt s
 
-execStmt (Ass p ident expr) interpreter = do
-    vars <- ask
+execStmt (Ass p ident expr) = do
+    vars <- get
     case Map.lookup ident vars of
-        (Just _) -> do
+        (Just (VarInfo _ False)) -> do
             val <- evalExpr expr
-            local (Map.insert ident (VarInfo val False)) interpreter -- typ w typechekerze, const sprawdzenie w typechekerze
+            modify (Map.insert ident (VarInfo val False)) -- todo typ w typechekerze
+        (Just (VarInfo _ True)) -> throwError $ "Assignment to readonly variable: " ++ show ident ++ " at " ++ showPos p --chyba wyjdzie w TypeCheckerze ????
         Nothing -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at " ++ showPos p --chyba wyjdzie w TypeCheckerze ????
 
-execStmt (Cond p expr stmt) interpreter = do
+execStmt (Cond p expr stmt) = do
     cond <- evalBool expr p
-    when cond $ execStmt stmt interpreter
+    when cond $ execStmt stmt
 
-execStmt (CondElse p expr stmt1 stmt2) interpreter = do
+execStmt (CondElse p expr stmt1 stmt2) = do
     cond <- evalBool expr p
-    if cond then execStmt stmt1 interpreter else execStmt stmt2 interpreter
+    if cond then execStmt stmt1 else execStmt stmt2
 
-execStmt w@(While p expr stmt) interpreter = do
+execStmt w@(While p expr stmt) = do
     cond <- evalBool expr p
-    when cond $ execStmt w (execStmt stmt interpreter)
+    when cond $ do
+        execStmt stmt
+        execStmt w
 
-execStmt (For p loopVar startExpr endExpr stmt) interpreter = do
+execStmt (For p loopVar startExpr endExpr stmt) = do
     startVal <- evalInteger startExpr p
     endVal <- evalInteger endExpr p
-    forLoop stmt startVal endVal interpreter
+    forLoop stmt startVal endVal
     where
-    forLoop :: Stmt -> Integer -> Integer -> Interpreter () -> Interpreter ()
-    forLoop s start end interp =
-        when (start < end) $ do
+    forLoop :: Stmt -> Integer -> Integer -> Interpreter ()
+    forLoop s start end =
+        when (start <= end) $ do
             -- todo sprawdzenie czy wolny identyfikator, tak samo pewnie w innych miejscach
-            local (Map.insert loopVar (VarInfo (VInt start) True)) interpreter
-            forLoop s (start + 1) end (execStmt s interpreter)
+            modify (Map.insert loopVar (VarInfo (VInt start) True))
+            execStmt s
+            forLoop s (start + 1) end
 
-execStmt (SExp p expr) interpreter = do
+execStmt (SExp p expr) = do
     evalExpr expr
     return ()
 
-execStmt (Ret p expr) interpreter = undefined
-execStmt (VRet p) interpreter = undefined
+-- todo returny
+execStmt (Ret p expr) = do
+    val <- evalExpr expr
+    return ()
+execStmt (VRet p) = return ()
 
 execDef :: TopDef -> Interpreter ()
 execDef (FnDef p t f args s) = return ()
@@ -120,7 +129,7 @@ execDef (FnDef p t f args s) = return ()
 execProgram :: Program -> IO ()
 execProgram prog@(Program p [def@(FnDef p' t f _ s)]) = do
     let initEnv = Map.fromList [(Ident "printInt", printIntFunctionVarInfo), (Ident "printString", printStringFunctionVarInfo), (Ident "printBool", printBoolFunctionVarInfo)]
-    result <- runExceptT $ runReaderT (execStmt (BStmt p' s) $ execDef def) initEnv
+    result <- runExceptT $ runStateT (execStmt (BStmt p' s)) initEnv
     case result of
         Left err -> hPutStrLn stderr $ "runtime error: " ++ err
         Right _ -> return ()

@@ -1,9 +1,8 @@
 module Expressions where
 import Control.Monad.Except
-import Control.Monad.Reader
+import Control.Monad.State
 import qualified Data.Map as Map
 import AbsFlatwhite
-import Control.Monad.State (execState)
 import Types
 
 showPos :: BNFC'Position -> [Char]
@@ -35,7 +34,7 @@ evalString e p = do
 mulOpToFunction :: MulOp -> (Integer -> Integer -> Integer)
 mulOpToFunction (Times _) a b = a * b
 mulOpToFunction (Div _) a b = div a b
-mulOpToFunction (Mod _) a b = mod a b 
+mulOpToFunction (Mod _) a b = mod a b
 
 addOpToFunction :: AddOp -> (Integer -> Integer -> Integer)
 addOpToFunction (Plus _) a b = a + b
@@ -61,17 +60,17 @@ evalExpr (ELitTrue _)  = return (VBool True)
 evalExpr (ELitFalse _) = return (VBool False)
 
 evalExpr (EVar p ident) = do
-    vars <- ask
+    vars <- get
     case Map.lookup ident vars of
         Just (VarInfo (VFunction _) _) -> throwError $ "Attempt to eval function as variable at " ++ showPos p
         Just (VarInfo v _) -> return v
         _ -> throwError $ "Undefined variable " ++ show ident ++ " at " ++ showPos p
 
 evalExpr (EApp p ident args) = do
-    vars <- ask
+    vars <- get
     case Map.lookup ident vars of
         Just (VarInfo (VFunction f) p') -> f args p
-        _ -> throwError $ "Undefined function" ++ show ident ++ " at " ++ showPos p 
+        _ -> throwError $ "Undefined function" ++ show ident ++ " at " ++ showPos p
 
 evalExpr (Neg p e) = do
     e' <- evalExpr e
@@ -108,7 +107,7 @@ evalExpr (ERel p e1 op e2) = do
             (VInt b) -> return (VBool $ relOpToIntegerFunction op a b)
             _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
         (VBool a) -> do
-            op' <- relOpToBooleanFunction op p 
+            op' <- relOpToBooleanFunction op p
             case e2' of
                 (VBool b) -> return (VBool $ op' a b)
                 _ -> throwError $ "Boolean operation on non-boolean at " ++ showPos p --chyba wyjdzie w TypeCheckerze
@@ -118,7 +117,7 @@ evalExpr (EAnd p e1 e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
     case e1' of
-        (VBool a) -> 
+        (VBool a) ->
             case e2' of
                 (VBool b) -> return (VBool $ a && b)
                 _ -> throwError $ "Boolean operation on non-boolean at " ++ showPos p -- chyba wyjdzie w TypeCheckerze
@@ -127,7 +126,7 @@ evalExpr (EOr p e1 e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
     case e1' of
-        (VBool a) -> 
+        (VBool a) ->
             case e2' of
                 (VBool b) -> return (VBool $ a || b)
                 _ -> throwError $ "Boolean operation on non-boolean at" ++ showPos p --chyba wyjdzie w TypeCheckerze

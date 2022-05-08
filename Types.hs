@@ -3,7 +3,7 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import qualified Data.Map as DataMap
 import AbsFlatwhite
-import Control.Monad.State (execState)
+import Control.Monad.State
 
 data Var =
     VInt Integer
@@ -30,4 +30,4 @@ data VarInfo = VarInfo Var Bool -- variable and whether or not it's readonly
 
 type Env = DataMap.Map Ident VarInfo
 type IntExcept = ExceptT String IO
-type Interpreter = ReaderT Env IntExcept
+type Interpreter = StateT Env IntExcept
