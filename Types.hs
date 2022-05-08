@@ -4,13 +4,12 @@ import Control.Monad.Reader
 import qualified Data.Map as DataMap
 import AbsFlatwhite
 import Control.Monad.State (execState)
--- todo printInt, printBool i printString, pewnie oddzielny moduł
 
 data Var =
     VInt Integer
     | VBool Bool
     | VString String
-    | VFunction ([Expr] -> Var) -- todo
+    | VFunction ([Expr] -> BNFC'Position -> Interpreter Var)
     | VVoid
 
 instance Eq Var where
@@ -30,5 +29,5 @@ instance Show Var where
 data VarInfo = VarInfo Var Bool -- variable and whether or not it's readonly
 
 type Env = DataMap.Map Ident VarInfo
-type IExcept = ExceptT String IO
-type Interpreter = ReaderT Env IExcept
+type IntExcept = ExceptT String IO
+type Interpreter = ReaderT Env IntExcept
