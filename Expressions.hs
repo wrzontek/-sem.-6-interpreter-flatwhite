@@ -36,10 +36,6 @@ mulOpToFunction (Times _) a b = a * b
 mulOpToFunction (Div _) a b = div a b
 mulOpToFunction (Mod _) a b = mod a b
 
-addOpToFunction :: AddOp -> (Integer -> Integer -> Integer)
-addOpToFunction (Plus _) a b = a + b
-addOpToFunction (Minus _) a b = a - b
-
 relOpToIntegerFunction :: RelOp -> (Integer -> Integer -> Bool)
 relOpToIntegerFunction (LTH _) a b = a < b
 relOpToIntegerFunction (LE _) a b = a <= b
@@ -90,14 +86,26 @@ evalExpr (EMul p e1 op e2) = do
             (VInt b) -> return (VInt $ mulOpToFunction op a b)
             _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
         _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
-evalExpr (EAdd p e1 op e2) = do
+evalExpr (EAdd p e1 (Plus _) e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
     case e1' of
         (VInt a) -> case e2' of
-            (VInt b) -> return (VInt $ addOpToFunction op a b)
+            (VInt b) -> return (VInt $ a + b)
             _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
-        _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze TODO string concatenation?
+        (VString a) -> case e2' of
+            (VString b) -> return (VString $ a ++ b)
+            _ -> throwError $ "String operation on non-string at " ++ showPos p --chyba wyjdzie w TypeCheckerze
+        _ -> throwError $ "Illegal add operation on-adding types at:  " ++ showPos p --chyba wyjdzie w TypeCheckerze
+
+evalExpr (EAdd p e1 (Minus _) e2) = do
+    e1' <- evalExpr e1
+    e2' <- evalExpr e2
+    case e1' of
+        (VInt a) -> case e2' of
+            (VInt b) -> return (VInt $ a - b)
+            _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
+        _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
 
 evalExpr (ERel p e1 op e2) = do
     e1' <- evalExpr e1
