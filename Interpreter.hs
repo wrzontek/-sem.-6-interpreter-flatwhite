@@ -144,17 +144,23 @@ execDef (FnDef p retT f args block) = do
                 (Arg _ (Int _) ident) -> do
                     val <- evalExpr e
                     case val of
-                        (VInt v) -> modify (Map.insert ident (VarInfo (VInt v) False))
+                        (VInt v) -> do
+                            modify (Map.insert ident (VarInfo (VInt v) False))
+                            getFunctionArgs p as es
                         _ -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
                 (Arg _ (Str _) ident) -> do
                     val <- evalExpr e
                     case val of
-                        (VString v) -> modify (Map.insert ident (VarInfo (VString v) False))
+                        (VString v) -> do
+                            modify (Map.insert ident (VarInfo (VString v) False))
+                            getFunctionArgs p as es
                         _ -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
                 (Arg _ (Bool _) ident) -> do
                     val <- evalExpr e
                     case val of
-                        (VBool v) -> modify (Map.insert ident (VarInfo (VBool v) False))
+                        (VBool v) -> do
+                            modify (Map.insert ident (VarInfo (VBool v) False))
+                            getFunctionArgs p as es
                         _ -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
                 (Arg _ _ ident) -> throwError $ "Illegal Void/Function argument: " ++ show ident ++ " at: " ++ showPos p
 
