@@ -8,6 +8,7 @@ import IExpressions (evalExpr, evalBool, evalInteger, evalString)
 import Types
 import System.IO (stderr, hPutStrLn)
 import Control.Monad
+import TypeChecker (execTypeCheck)
 
 printString :: [Expr] -> BNFC'Position -> Interpreter Var
 printString [expr] p = do
@@ -169,14 +170,16 @@ execDefsThenMain p defs = do
 execProgram :: Program -> IO ()
 -- execProgram prog@(Program p def@[FnDef p' t f _ s]) = do
 execProgram prog@(Program p defs) = do
-    let initEnv = Map.fromList [(funcIdent $ Ident "printInt", VFunction printInt), (funcIdent $ Ident "printString", VFunction printString), (funcIdent $ Ident "printBool", VFunction printBool)]
-    --result <- runExceptT $ runStateT (execStmt (BStmt p' s)) initEnv
-    -- todo coś co odpali najpierw defy a potem stmt
-    result <- runExceptT $ runStateT (execDefsThenMain p defs) initEnv
+    typeCheck <- runExceptT $ runStateT (execTypeCheck p defs) Map.empty
+    case typeCheck of
+        Left error -> hPutStrLn stderr $ "type check error: " ++ error
+        Right _ -> do
+            let initEnv = Map.fromList [(funcIdent $ Ident "printInt", VFunction printInt), (funcIdent $ Ident "printString", VFunction printString), (funcIdent $ Ident "printBool", VFunction printBool)]
+            result <- runExceptT $ runStateT (execDefsThenMain p defs) initEnv
 
-    case result of
-        Left err -> hPutStrLn stderr $ "runtime error: " ++ err
-        Right _ -> return ()
+            case result of
+                Left error -> hPutStrLn stderr $ "runtime error: " ++ error
+                Right _ -> return ()
 
 --   typeResult <- runExceptT $ execType program
 --   case typeResult of

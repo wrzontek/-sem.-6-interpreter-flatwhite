@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Interpreter where
+module TypeChecker where
 import Control.Monad.Except
 import Data.Map as Map
 import AbsFlatwhite
@@ -180,3 +180,13 @@ execDefs [] = return ()
 execDefs (d:ds) = do
     execDef d
     execDefs ds    
+
+execTypeCheck :: BNFC'Position -> [TopDef] -> TypeChecker ()
+execTypeCheck p defs = do
+    execDefs defs
+    env <- get
+    case Map.lookup (funcIdent $ Ident "main") env of
+        (Just (TypeInfo (TFunction f) _)) -> do
+            f [] p
+            return ()
+        _ -> throwError "No 'main' function defined"    
