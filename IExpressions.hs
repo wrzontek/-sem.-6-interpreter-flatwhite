@@ -1,13 +1,9 @@
-module Expressions where
+module IExpressions where
 import Control.Monad.Except
 import Control.Monad.State
 import qualified Data.Map as Map
 import AbsFlatwhite
 import Types
-
-showPos :: BNFC'Position -> [Char]
-showPos (Just x) = show x
-showPos _ = "?"
 
 evalBool :: Expr -> BNFC'Position -> Interpreter Bool
 evalBool e p = do
@@ -58,14 +54,14 @@ evalExpr (ELitFalse _) = return (VBool False)
 evalExpr (EVar p ident) = do
     vars <- get
     case Map.lookup ident vars of
-        Just (VarInfo (VFunction _) _) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
-        Just (VarInfo v _) -> return v
+        Just (VFunction _) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
+        Just v -> return v
         _ -> throwError $ "Undefined variable " ++ show ident ++ " at: " ++ showPos p
 
 evalExpr (EApp p ident args) = do
     vars <- get
-    case Map.lookup ident vars of
-        Just (VarInfo (VFunction f) p') -> f args p
+    case Map.lookup (funcIdent ident) vars of
+        Just (VFunction f) -> f args p
         _ -> throwError $ "Undefined function" ++ show ident ++ " at: " ++ showPos p
 
 evalExpr (Neg p e) = do

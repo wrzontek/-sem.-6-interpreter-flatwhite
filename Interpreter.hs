@@ -4,14 +4,10 @@ import Control.Monad.Except
 import Data.Map as Map
 import AbsFlatwhite
 import Control.Monad.State ( modify, StateT (runStateT), MonadState (get) )
-import Expressions (evalExpr, evalBool, evalInteger, evalString, showPos)
+import IExpressions (evalExpr, evalBool, evalInteger, evalString)
 import Types
 import System.IO (stderr, hPutStrLn)
 import Control.Monad
-
-
-returnValue :: Ident
-returnValue = Ident "__return_value__"
 
 printString :: [Expr] -> BNFC'Position -> Interpreter Var
 printString [expr] p = do
@@ -21,9 +17,6 @@ printString [expr] p = do
 printString [] p = throwError $ "no argument in print function at: " ++ showPos p
 printString exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
 
-printStringFunctionVarInfo :: VarInfo
-printStringFunctionVarInfo = VarInfo (VFunction printString) False
-
 printInt :: [Expr] -> BNFC'Position -> Interpreter Var
 printInt [expr] p = do
     n <- evalInteger expr p
@@ -31,9 +24,6 @@ printInt [expr] p = do
     return VVoid
 printInt [] p = throwError $ "no argument in print function at: " ++ showPos p
 printInt exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
-
-printIntFunctionVarInfo :: VarInfo
-printIntFunctionVarInfo = VarInfo (VFunction printInt) False
 
 printBool :: [Expr] -> BNFC'Position -> Interpreter Var
 printBool [expr] p = do
@@ -43,34 +33,28 @@ printBool [expr] p = do
 printBool [] p = throwError $ "no argument in print function at: " ++ showPos p
 printBool exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
 
-printBoolFunctionVarInfo :: VarInfo
-printBoolFunctionVarInfo = VarInfo (VFunction printBool) False
-
-
-noInitVar :: Type -> Bool -> VarInfo
-noInitVar (Int _) readonly = VarInfo (VInt 0) readonly
-noInitVar (Str _) readonly = VarInfo (VString "") readonly
-noInitVar (Bool _) readonly = VarInfo (VBool False) readonly
-noInitVar (Void _) readonly = VarInfo VVoid readonly
-noInitVar Fun {} readonly = error "cannot declare function as variable"
+noInitVar :: Type -> Var
+noInitVar (Int _) = VInt 0
+noInitVar (Str _) = VString ""
+noInitVar (Bool _) = VBool False
+noInitVar (Void _) = VVoid
+noInitVar Fun {} = error "cannot declare function as variable"
 
 execStmt :: Stmt -> Interpreter ()
 execStmt (Decl p t []) = throwError $ "Empty declaration at " ++ showPos p
-execStmt (Decl p t [NoInit p' x]) = modify (Map.insert x (noInitVar t False)) -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
+execStmt (Decl p t [NoInit p' x]) = modify (Map.insert x (noInitVar t))
 execStmt (Decl p t [Init p' x expr]) = do
-    -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
-    var <- evalExpr expr -- todo typecheckerować to czy coś idk
-    modify (Map.insert x (VarInfo var False))
+    var <- evalExpr expr
+    modify (Map.insert x var)
 execStmt (Decl p t (x:xs)) = do
     execStmt (Decl p t [x])
     execStmt (Decl p t xs)
 
 execStmt (ConstDecl p t []) = throwError $  "Empty declaration at " ++ showPos p
-execStmt (ConstDecl p t [NoInit p' x]) = modify (Map.insert x (noInitVar t True)) -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
+execStmt (ConstDecl p t [NoInit p' x]) = modify (Map.insert x (noInitVar t))
 execStmt (ConstDecl p t [Init p' x expr]) = do
-    -- todo pewnie trzeba sprawdzać czy już nie zadeklarowana, pewnie w typecheckerze
-    var <- evalExpr expr -- todo typecheckerować to czy coś idk
-    modify (Map.insert x (VarInfo var True))
+    var <- evalExpr expr
+    modify (Map.insert x var)
 execStmt (ConstDecl p t (x:xs)) = do
     execStmt (ConstDecl p t [x])
     execStmt (ConstDecl p t xs)
@@ -78,16 +62,16 @@ execStmt (ConstDecl p t (x:xs)) = do
 execStmt (Empty p) = return ()
 execStmt (BStmt p (Block p' [])) = return ()
 execStmt (BStmt p (Block p' (s:sx))) = do
+    -- todo przed zrobić kopie env i po bloku przywrócić ???? 
     execStmt s
     execStmt (BStmt p (Block p' sx))
 
 execStmt (Ass p ident expr) = do
     vars <- get
     case Map.lookup ident vars of
-        (Just (VarInfo _ False)) -> do
-            val <- evalExpr expr
-            modify (Map.insert ident (VarInfo val False)) -- todo typ w typechekerze
-        (Just (VarInfo _ True)) -> throwError $ "Assignment to readonly variable: " ++ show ident ++ " at " ++ showPos p --chyba wyjdzie w TypeCheckerze ????
+        (Just v) -> do
+            var <- evalExpr expr
+            modify (Map.insert ident var)
         Nothing -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at " ++ showPos p --chyba wyjdzie w TypeCheckerze ????
 
 execStmt (Cond p expr stmt) = do
@@ -110,12 +94,12 @@ execStmt (For p loopVar startExpr endExpr stmt) = do
     forLoop stmt startVal endVal
     where
     forLoop :: Stmt -> Integer -> Integer -> Interpreter ()
-    forLoop s start end =
-        when (start <= end) $ do
-            -- todo sprawdzenie czy wolny identyfikator, tak samo pewnie w innych miejscach
-            modify (Map.insert loopVar (VarInfo (VInt start) True))
+    forLoop s iter end =
+        when (iter <= end) $ do
+            -- todo sprawdzenie czy wolny identyfikator i czy int, tak samo pewnie w innych miejscach
+            modify (Map.insert loopVar (VInt iter))
             execStmt s
-            forLoop s (start + 1) end
+            forLoop s (iter + 1) end
 
 execStmt (SExp p expr) = do
     evalExpr expr
@@ -123,80 +107,47 @@ execStmt (SExp p expr) = do
 
 execStmt (Ret p expr) = do
     var <- evalExpr expr
-    modify (Map.insert returnValue (VarInfo var True))
+    modify (Map.insert returnValue var)
     return ()
 execStmt (VRet p) = do
-    modify (Map.insert returnValue (VarInfo VVoid True))
+    modify (Map.insert returnValue VVoid)
     return ()
 
 
 execDef :: TopDef -> Interpreter ()
 execDef (FnDef p _ f _ (Block _ [])) = throwError $ "Empty function body at: " ++ showPos p
 execDef (FnDef p retT f args block) = do
-    modify (Map.insert f (VarInfo (VFunction function) True))
+    modify (Map.insert (funcIdent f) (VFunction function))
     where
         getFunctionArgs :: BNFC'Position -> [Arg' BNFC'Position] -> [Expr] -> Interpreter ()
         getFunctionArgs p [] [] = return ()
         getFunctionArgs p [] e = throwError $ "Incorrect argument count at: " ++ showPos p
         getFunctionArgs p a [] = throwError $ "Incorrect argument count at: " ++ showPos p
         getFunctionArgs p (a:as) (e:es) = do
-            case a of
-                (Arg _ (Int _) ident) -> do
-                    val <- evalExpr e
-                    case val of
-                        (VInt v) -> do
-                            modify (Map.insert ident (VarInfo (VInt v) False))
-                            getFunctionArgs p as es
-                        _ -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
-                (Arg _ (Str _) ident) -> do
-                    val <- evalExpr e
-                    case val of
-                        (VString v) -> do
-                            modify (Map.insert ident (VarInfo (VString v) False))
-                            getFunctionArgs p as es
-                        _ -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
-                (Arg _ (Bool _) ident) -> do
-                    val <- evalExpr e
-                    case val of
-                        (VBool v) -> do
-                            modify (Map.insert ident (VarInfo (VBool v) False))
-                            getFunctionArgs p as es
-                        _ -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
-                (Arg _ _ ident) -> throwError $ "Illegal Void/Function argument: " ++ show ident ++ " at: " ++ showPos p
-
-        ensureReturnType :: BNFC'Position -> Var -> Type' BNFC'Position -> Interpreter ()
-        ensureReturnType p v t = do
-            case t of
-              Int _ -> case v of 
-                VInt n -> return ()
-                _ -> throwError $ "Non-matching return type from function at: " ++ showPos p
-              Str _ -> case v of 
-                VString s -> return ()
-                _ -> throwError $ "Non-matching return type from function at: " ++ showPos p
-              Bool _ -> case v of 
-                VBool b -> return ()
-                _ -> throwError $ "Non-matching return type from function at: " ++ showPos p
-              Void _ -> case v of 
-                VVoid -> return ()
-                _ -> throwError $ "Non-matching return type from function at: " ++ showPos p
-              Fun {}-> throwError $ "Cannot return function at " ++ showPos p
+            v <- evalExpr e
+            case (a,v) of
+                (Arg _ (Int _) ident, VInt v) -> do
+                    modify (Map.insert ident (VInt v))
+                    getFunctionArgs p as es
+                (Arg _ (Str _) ident, VString v) -> do
+                    modify (Map.insert ident (VString v))
+                    getFunctionArgs p as es
+                (Arg _ (Bool _) ident, VBool v) -> do
+                    modify (Map.insert ident (VBool v))
+                    getFunctionArgs p as es
+                (Arg _ _ ident, _) -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
 
         function :: [Expr] -> BNFC'Position -> Interpreter Var
         function xs p' = do
-            if length xs /= length args
-                then throwError $ "Incorrect argument count for function: " ++ show f ++ " at: " ++ showPos p' -- todo typechecker?
-                else do
-                    initialEnv <- get
-                    modify (Map.delete returnValue)
-                    getFunctionArgs p' args xs
-                    execStmt (BStmt p block)
-                    postStmtsEnv <- get
-                    modify (\_ -> initialEnv) -- returning to original, pre-function-call environment
-                    case Map.lookup returnValue postStmtsEnv of
-                        Nothing -> throwError $ "Function: " ++ show f ++ " didn't call return at: " ++ showPos p'
-                        (Just (VarInfo rVal _)) ->  do
-                            ensureReturnType p' rVal retT
-                            return rVal
+            initialEnv <- get
+            modify (Map.delete returnValue)
+            getFunctionArgs p' args xs
+            execStmt (BStmt p' block)
+            postStmtsEnv <- get
+            modify (\_ -> initialEnv) -- returning to original, pre-function-call environment
+            case Map.lookup returnValue postStmtsEnv of
+                Nothing -> throwError $ "Function: " ++ show f ++ " didn't call return at: " ++ showPos p'
+                (Just rVal) -> return rVal
 
 execDefs :: [TopDef] -> Interpreter()
 execDefs [] = return ()
@@ -208,8 +159,8 @@ execDefsThenMain :: BNFC'Position -> [TopDef] -> Interpreter()
 execDefsThenMain p defs = do
     execDefs defs
     env <- get
-    case Map.lookup (Ident "main") env of
-        (Just (VarInfo (VFunction f) _)) -> do
+    case Map.lookup (funcIdent $ Ident "main") env of
+        (Just (VFunction f)) -> do
             f [] p
             return ()
         _ -> throwError "No 'main' function defined"
@@ -218,7 +169,7 @@ execDefsThenMain p defs = do
 execProgram :: Program -> IO ()
 -- execProgram prog@(Program p def@[FnDef p' t f _ s]) = do
 execProgram prog@(Program p defs) = do
-    let initEnv = Map.fromList [(Ident "printInt", printIntFunctionVarInfo), (Ident "printString", printStringFunctionVarInfo), (Ident "printBool", printBoolFunctionVarInfo)]
+    let initEnv = Map.fromList [(funcIdent $ Ident "printInt", VFunction printInt), (funcIdent $ Ident "printString", VFunction printString), (funcIdent $ Ident "printBool", VFunction printBool)]
     --result <- runExceptT $ runStateT (execStmt (BStmt p' s)) initEnv
     -- todo coś co odpali najpierw defy a potem stmt
     result <- runExceptT $ runStateT (execDefsThenMain p defs) initEnv
