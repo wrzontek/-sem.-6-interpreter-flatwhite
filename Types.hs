@@ -31,3 +31,5 @@ data VarInfo = VarInfo Var Bool -- variable and whether or not it's readonly
 type Env = DataMap.Map Ident VarInfo
 type IntExcept = ExceptT String IO
 type Interpreter = StateT Env IntExcept
+
+

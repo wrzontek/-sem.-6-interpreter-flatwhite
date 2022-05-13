@@ -58,84 +58,68 @@ evalExpr (ELitFalse _) = return (VBool False)
 evalExpr (EVar p ident) = do
     vars <- get
     case Map.lookup ident vars of
-        Just (VarInfo (VFunction _) _) -> throwError $ "Attempt to eval function as variable at " ++ showPos p
+        Just (VarInfo (VFunction _) _) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
         Just (VarInfo v _) -> return v
-        _ -> throwError $ "Undefined variable " ++ show ident ++ " at " ++ showPos p
+        _ -> throwError $ "Undefined variable " ++ show ident ++ " at: " ++ showPos p
 
 evalExpr (EApp p ident args) = do
     vars <- get
     case Map.lookup ident vars of
         Just (VarInfo (VFunction f) p') -> f args p
-        _ -> throwError $ "Undefined function" ++ show ident ++ " at " ++ showPos p
+        _ -> throwError $ "Undefined function" ++ show ident ++ " at: " ++ showPos p
 
 evalExpr (Neg p e) = do
     e' <- evalExpr e
     case e' of
         (VInt n) -> return $ VInt $ negate n
-        _ -> throwError $ "Cannot negate expression at " ++ showPos p --chyba wyjdzie w TypeCheckerze
+        _ -> throwError $ "Cannot negate expression at: " ++ showPos p --chyba wyjdzie w TypeCheckerze
 evalExpr (Not p e) = do
     e' <- evalExpr e
     case e' of
         (VBool b) -> return $ VBool $ not b
-        _ -> throwError $ "Cannot 'not' expression at " ++ showPos p  --chyba wyjdzie w TypeCheckerze
+        _ -> throwError $ "Cannot 'not' expression at: " ++ showPos p  --chyba wyjdzie w TypeCheckerze
+
 evalExpr (EMul p e1 op e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
-    case e1' of
-        (VInt a) -> case e2' of
-            (VInt b) -> return (VInt $ mulOpToFunction op a b)
-            _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
-        _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
+    case (e1', e2') of
+        (VInt a, VInt b) -> return (VInt $ mulOpToFunction op a b)
+        _ -> throwError $ "Integer operation on non-integer at: " ++ showPos p --chyba wyjdzie w TypeCheckerze
+
 evalExpr (EAdd p e1 (Plus _) e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
-    case e1' of
-        (VInt a) -> case e2' of
-            (VInt b) -> return (VInt $ a + b)
-            _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
-        (VString a) -> case e2' of
-            (VString b) -> return (VString $ a ++ b)
-            _ -> throwError $ "String operation on non-string at " ++ showPos p --chyba wyjdzie w TypeCheckerze
+    case (e1', e2') of
+        (VInt a, VInt b) ->  return (VInt $ a + b)
+        (VString a, VString b) -> return (VString $ a ++ b)
         _ -> throwError $ "Illegal add operation on-adding types at:  " ++ showPos p --chyba wyjdzie w TypeCheckerze
 
 evalExpr (EAdd p e1 (Minus _) e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
-    case e1' of
-        (VInt a) -> case e2' of
-            (VInt b) -> return (VInt $ a - b)
-            _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
-        _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
+    case (e1', e2') of
+        (VInt a, VInt b) -> return (VInt $ a - b)
+        _ -> throwError $ "Integer operation on non-integer at: " ++ showPos p --chyba wyjdzie w TypeCheckerze
 
 evalExpr (ERel p e1 op e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
-    case e1' of
-        (VInt a) -> case e2' of
-            (VInt b) -> return (VBool $ relOpToIntegerFunction op a b)
-            _ -> throwError $ "Integer operation on non-integer at " ++ showPos p --chyba wyjdzie w TypeCheckerze
-        (VBool a) -> do
+    case (e1', e2') of
+        (VInt a, VInt b) -> return (VBool $ relOpToIntegerFunction op a b)
+        (VBool a, VBool b) -> do
             op' <- relOpToBooleanFunction op p
-            case e2' of
-                (VBool b) -> return (VBool $ op' a b)
-                _ -> throwError $ "Boolean operation on non-boolean at " ++ showPos p --chyba wyjdzie w TypeCheckerze
-        _ -> throwError $ "Integer/Boolean operation on non-integer/non-boolean at " ++ showPos p --chyba wyjdzie w TypeCheckerze
+            return (VBool $ op' a b)
+        _ -> throwError $ "Integer/Boolean operation on non-integer/non-boolean at: " ++ showPos p --chyba wyjdzie w TypeCheckerze
 
 evalExpr (EAnd p e1 e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
-    case e1' of
-        (VBool a) ->
-            case e2' of
-                (VBool b) -> return (VBool $ a && b)
-                _ -> throwError $ "Boolean operation on non-boolean at " ++ showPos p -- chyba wyjdzie w TypeCheckerze
-        _ -> throwError $ "Boolean operation on non-boolean at " ++ showPos p -- chyba wyjdzie w TypeCheckerze
+    case (e1', e2') of
+        (VBool a, VBool b) -> return (VBool $ a && b)
+        _ -> throwError $ "Boolean operation on non-boolean at: " ++ showPos p -- chyba wyjdzie w TypeCheckerze
 evalExpr (EOr p e1 e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
-    case e1' of
-        (VBool a) ->
-            case e2' of
-                (VBool b) -> return (VBool $ a || b)
-                _ -> throwError $ "Boolean operation on non-boolean at" ++ showPos p --chyba wyjdzie w TypeCheckerze
-        _ -> throwError $  "Boolean operation on non-boolean at" ++ showPos p --chyba wyjdzie w TypeCheckerze
+    case (e1', e2') of
+        (VBool a, VBool b) -> return (VBool $ a || b)
+        _ -> throwError $  "Boolean operation on non-boolean at: " ++ showPos p --chyba wyjdzie w TypeCheckerze
