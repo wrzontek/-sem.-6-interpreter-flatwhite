@@ -9,31 +9,6 @@ import Types
 import System.IO (stderr, hPutStrLn)
 import Control.Monad
 
--- tPrintString :: [Expr] -> BNFC'Position -> TypeChecker TType
--- tPrintString [expr] p = do
---     s <- evalString expr p
---     liftIO $ putStr $ s ++ "\n"
---     return VVoid
--- tPrintString [] p = throwError $ "no argument in print function at: " ++ showPos p
--- tPrintString exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
-
--- tPrintInt :: [Expr] -> BNFC'Position -> TypeChecker TType
--- tPrintInt [expr] p = do
---     n <- evalInteger expr p
---     liftIO $ putStr $ show n ++ "\n"
---     return VVoid
--- tPrintInt [] p = throwError $ "no argument in print function at: " ++ showPos p
--- tPrintInt exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
-
--- printBool :: [Expr] -> BNFC'Position -> TypeChecker TType
--- printBool [expr] p = do
---     b <- evalBool expr p
---     liftIO $ putStr $ show b ++ "\n"
---     return VVoid
--- printBool [] p = throwError $ "no argument in print function at: " ++ showPos p
--- printBool exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
-
-
 safeHead :: [BlockPos] -> BlockPos
 safeHead [] = BNFC'Position (-1) (-1) -- will not be equal to any actual position in program
 safeHead (x:xs) = x
@@ -42,28 +17,24 @@ typeToTTypeForDecl :: Type-> BNFC'Position -> TypeChecker TType
 typeToTTypeForDecl (Int _) _ = return TInt
 typeToTTypeForDecl (Str _) _ = return TString
 typeToTTypeForDecl (Bool _) _ = return TBool
-typeToTTypeForDecl _ p = throwError $ "Cannot declare void/function variable at: " ++ showPos p
+typeToTTypeForDecl _ p = throwError $ "cannot declare void/function variable at: " ++ showPos p
 
 typeToTTypeForReturn :: Type -> BNFC'Position -> TypeChecker TType
 typeToTTypeForReturn (Int _) _ = return TInt
 typeToTTypeForReturn (Str _) _ = return TString
 typeToTTypeForReturn (Bool _) _ = return TBool
 typeToTTypeForReturn (Void _) _ = return TVoid
-typeToTTypeForReturn _ p = throwError $ "Cannot return function at: " ++ showPos p
-
-
--- combineStateOps :: (Map Ident [TypeInfo] -> Map Ident [TypeInfo]) -> ([BNFC'Position] -> [BNFC'Position]) -> (Map Ident [TypeInfo], [BNFC'Position]) -> (Map Ident [TypeInfo], [BNFC'Position])
--- combineStateOps mapOp blocksOp (map, blocks) = (mapOp map, blocksOp blocks)
+typeToTTypeForReturn _ p = throwError $ "cannot return function at: " ++ showPos p
 
 execDecl :: BlockPos -> BNFC'Position -> Type -> [Item] -> Bool -> TypeChecker ()
-execDecl _ p t [] _ = throwError $ "Empty declaration at: " ++ showPos p
+execDecl _ p t [] _ = throwError $ "empty declaration at: " ++ showPos p
 execDecl b p t [NoInit p' x] ro = do
     t' <- typeToTTypeForDecl t p
     env <- get
     case Map.lookup x env of
         Just ds@(d:_) -> case d of
             TypeInfo _ _ b' -> if b == b'
-                    then throwError $  "Redeclaration at: " ++ showPos p
+                    then throwError $  "redeclaration at: " ++ showPos p
                     else modify (Map.insert x (TypeInfo t' ro b : ds))
         _ -> modify (Map.insert x [TypeInfo t' ro b])
 
@@ -71,13 +42,13 @@ execDecl b p t [Init p' x expr] ro = do
     t1 <- typeToTTypeForDecl t p
     t2 <- getExprType expr
     if t1 /= t2
-        then throwError $  "Declaration of incorrect type at: " ++ showPos p
+        then throwError $  "declaration of incorrect type at: " ++ showPos p
         else do
             env <- get
             case Map.lookup x env of
                 Just ds@(d:_) -> case d of
                     TypeInfo _ _ b' -> if b == b'
-                            then throwError $  "Redeclaration at: " ++ showPos p
+                            then throwError $  "redeclaration at: " ++ showPos p
                             else modify (Map.insert x (TypeInfo t1 ro b : ds))
                 _ -> modify (Map.insert x [TypeInfo t1 ro b])
 
@@ -121,21 +92,21 @@ checkStmt b (Ass p ident expr) = do
         Just (x:_) -> case x of
             (TypeInfo t False _) -> do
                 t' <- getExprType expr
-                when (t /= t') $ throwError $  "Assignment of incorrect type at: " ++ showPos p
-            (TypeInfo _ True _) -> throwError $ "Assignment to readonly variable: " ++ show ident ++ " at: " ++ showPos p
-        _ -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at: " ++ showPos p
+                when (t /= t') $ throwError $  "assignment of incorrect type at: " ++ showPos p
+            (TypeInfo _ True _) -> throwError $ "assignment to readonly variable: " ++ show ident ++ " at: " ++ showPos p
+        _ -> throwError $ "assignment to undeclared variable: " ++ show ident ++ " at: " ++ showPos p
 
 checkStmt b (Cond p expr stmt) = do
     cond <- getExprType expr
     case cond of
       TBool -> checkStmt b stmt
-      _ -> throwError $ "Non-boolean condition at: " ++ showPos p
+      _ -> throwError $ "non-boolean condition at: " ++ showPos p
 
 checkStmt b (While p expr stmt) = do
     cond <- getExprType expr
     case cond of
       TBool -> checkStmt b stmt
-      _ -> throwError $ "Non-boolean condition at: " ++ showPos p
+      _ -> throwError $ "non-boolean condition at: " ++ showPos p
 
 checkStmt b (CondElse p expr stmt1 stmt2) = do
     cond <- getExprType expr
@@ -145,7 +116,7 @@ checkStmt b (CondElse p expr stmt1 stmt2) = do
           checkStmt b stmt1
           modify (const initialEnv)
           checkStmt b stmt2
-      _ -> throwError $ "Non-boolean condition at: " ++ showPos p
+      _ -> throwError $ "non-boolean condition at: " ++ showPos p
 
 checkStmt b (For p loopVar startExpr endExpr stmt) = do
     env <- get
@@ -154,7 +125,7 @@ checkStmt b (For p loopVar startExpr endExpr stmt) = do
     case Map.lookup loopVar env of
         Just ds@(d:_) -> case d of
             TypeInfo _ _ b' -> if b == b'
-                then throwError $  "Redeclaration at: " ++ showPos p
+                then throwError $  "redeclaration at: " ++ showPos p
                 else do
                     modify (Map.insert loopVar (TypeInfo TInt True b : ds))
                     checkStmt b stmt
@@ -179,14 +150,14 @@ argToTTypeWithIdent :: Arg -> TypeChecker (TType, Ident)
 argToTTypeWithIdent (Arg _ (Str _) ident) = return (TString, ident)
 argToTTypeWithIdent (Arg _ (Int _) ident) = return (TInt, ident)
 argToTTypeWithIdent (Arg _ (Bool _) ident) = return (TBool, ident)
-argToTTypeWithIdent (Arg p _ ident) = throwError $ "Function/void passed as function argument: " ++ show ident ++ " at: " ++ showPos p
+argToTTypeWithIdent (Arg p _ ident) = throwError $ "function/void passed as function argument: " ++ show ident ++ " at: " ++ showPos p
 
 execDef :: TopDef -> TypeChecker ()
-execDef (FnDef fPos _ f _ (Block _ [])) = throwError $ "Empty function body at: " ++ showPos fPos
+execDef (FnDef fPos _ f _ (Block _ [])) = throwError $ "empty function body at: " ++ showPos fPos
 execDef (FnDef fPos retT f args block) = do
     funcEnv <- get
     case Map.lookup f funcEnv of
-        Just ds@(d:_) -> throwError $  "Function redefinition at: " ++ showPos fPos
+        Just ds@(d:_) -> throwError $  "function redefinition at: " ++ showPos fPos
         _ -> do
             argTypesWithIdents <- mapM argToTTypeWithIdent args
             retT <- typeToTTypeForReturn retT fPos
@@ -222,11 +193,10 @@ checkAllFunctions b ((fIdent, [TypeInfo (TFunction args retT block) _ p]) : fs) 
     case Map.lookup returnValue postStmtsEnv of
         (Just ((TypeInfo retT' _ _):_)) ->  if retT == retT'
             then checkAllFunctions b fs
-            else throwError $ "Incorrect return type from function " ++ show fIdent
-        _ -> throwError $ "Function: " ++ show fIdent ++ " doesn't return"
+            else throwError $ "incorrect return type from function " ++ show fIdent
+        _ -> throwError $ "function: " ++ show fIdent ++ " doesn't return"
 
 checkAllFunctions _ _ = error "defined non-function as function" -- should never happen, just for pattern-matching purpuses
-
 
 execTypeCheck :: BNFC'Position -> [TopDef] -> TypeChecker ()
 execTypeCheck p defs = do
@@ -234,4 +204,4 @@ execTypeCheck p defs = do
     env <- get
     case Map.lookup (funcIdent $ Ident "main") env of
         Just _ -> checkAllFunctions p $ Map.toList env
-        _ -> throwError "No 'main' function defined"
+        _ -> throwError "no 'main' function defined"

@@ -16,24 +16,22 @@ printString [expr] p = do
     s <- evalString expr p
     liftIO $ putStr $ s ++ "\n"
     return VVoid
-printString [] p = throwError $ "no argument in print function at: " ++ showPos p
-printString exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
+printString _ p = throwError $ "bad argument count in print function at: " ++ showPos p -- checked by typechecker, included here for complete pattern matching
 
 printInt :: [Expr] -> BNFC'Position -> Interpreter Var
 printInt [expr] p = do
     n <- evalInteger expr p
     liftIO $ putStr $ show n ++ "\n"
     return VVoid
-printInt [] p = throwError $ "no argument in print function at: " ++ showPos p
-printInt exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
+printInt _ p = throwError $ "bad argument count in print function at: " ++ showPos p -- checked by typechecker, included here for complete pattern matching
 
 printBool :: [Expr] -> BNFC'Position -> Interpreter Var
 printBool [expr] p = do
     b <- evalBool expr p
     liftIO $ putStr $ show b ++ "\n"
     return VVoid
-printBool [] p = throwError $ "no argument in print function at: " ++ showPos p
-printBool exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
+printBool _ p = throwError $ "bad argument count in print function at: " ++ showPos p -- checked by typechecker, included here for complete pattern matching
+
 
 noInitVar :: Type -> Var
 noInitVar (Int _) = VInt 0
@@ -50,7 +48,7 @@ mapInsertOrAppend ident var b = do
         Just vs -> modify (Map.insert ident ((var, b):vs))
 
 execDecl :: BlockPos -> BNFC'Position -> Type -> [Item] -> Bool -> Interpreter ()
-execDecl _ p t [] ro = throwError $  "Empty declaration at " ++ showPos p
+execDecl _ p t [] ro = throwError $  "empty declaration at " ++ showPos p
 execDecl b p t [NoInit p' x] ro = mapInsertOrAppend x (noInitVar t) b
 execDecl b p t [Init p' x expr] ro = do
     var <- evalExpr expr
@@ -93,7 +91,7 @@ execStmt _ (Ass p ident expr) = do
     env <- get
     case Map.lookup ident env of
         Just ((_, b') : vs) -> modify (Map.insert ident ((var, b') : vs))
-        _ -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at " ++ showPos p
+        _ -> throwError $ "assignment to undeclared variable: " ++ show ident ++ " at " ++ showPos p
 
 execStmt b (Cond p expr stmt) = do
     cond <- evalBool expr p
@@ -103,7 +101,6 @@ execStmt b (CondElse p expr stmt1 stmt2) = do
     cond <- evalBool expr p
     if cond then execStmt b stmt1 else execStmt b stmt2
 
--- execStmt b w@(While p expr (BStmt _ (Block _ stmts))) = do
 execStmt b w@(While p expr stmt) = do
     cond <- evalBool expr p
     when cond $ do
@@ -113,12 +110,6 @@ execStmt b w@(While p expr stmt) = do
 execStmt b (For p loopVar startExpr endExpr stmt) = do
     startVal <- evalInteger startExpr p
     endVal <- evalInteger endExpr p
-    env <- get
-    case Map.lookup loopVar env of
-        Just ds@(d:_) -> case d of
-            (_, b') -> when (b == b') $ throwError $  "Redeclaration at: " ++ showPos p
-        _ -> return ()
-
     forLoop stmt startVal endVal where
 
     forLoop :: Stmt -> Integer -> Integer -> Interpreter ()
@@ -151,10 +142,10 @@ execDef :: TopDef -> Interpreter ()
 execDef (FnDef p retT f args block) = do
     modify (Map.insert (funcIdent f) [(VFunction function, p)])
     where
-        getFunctionArgs :: BNFC'Position -> [Arg] -> [Expr] -> Interpreter ()
+        getFunctionArgs :: BNFC'Position -> [Arg] -> [Expr] -> Interpreter () -- count and type correctness also checked in typechecker, included here also because it's natural and easy
         getFunctionArgs p [] [] = return ()
-        getFunctionArgs p [] e = throwError $ "Incorrect argument count at: " ++ showPos p
-        getFunctionArgs p a [] = throwError $ "Incorrect argument count at: " ++ showPos p
+        getFunctionArgs p [] e = throwError $ "incorrect argument count at: " ++ showPos p
+        getFunctionArgs p a [] = throwError $ "incorrect argument count at: " ++ showPos p
         getFunctionArgs p (a:as) (e:es) = do
             v <- evalExpr e
             case (a,v) of
@@ -167,7 +158,7 @@ execDef (FnDef p retT f args block) = do
                 (Arg _ (Bool _) ident, VBool v) -> do
                     mapInsertOrAppend ident (VBool v) p
                     getFunctionArgs p as es
-                (Arg _ _ ident, _) -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
+                (Arg _ _ ident, _) -> throwError $ "incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
 
         function :: [Expr] -> BNFC'Position -> Interpreter Var
         function xs p' = do
@@ -179,7 +170,7 @@ execDef (FnDef p retT f args block) = do
             modify (const initialEnv) -- returning to original, pre-function-call environment
             case Map.lookup returnValue postStmtsEnv of
                 (Just ((rVal, _):_)) -> return rVal
-                _ -> throwError $ "Function: " ++ show f ++ " didn't call return at: " ++ showPos p'
+                _ -> throwError $ "function: " ++ show f ++ " didn't call return at: " ++ showPos p'
 
 execDefs :: [TopDef] -> Interpreter()
 execDefs [] = return ()
@@ -195,16 +186,16 @@ execDefsThenMain p defs = do
         (Just ((VFunction f, _):_)) -> do
             f [] p
             return ()
-        _ -> throwError "No 'main' function defined"
+        _ -> throwError "no 'main' function defined" -- also checked in typechecker, here mainly for full pattern matching
 
 
 execProgram :: Program -> IO ()
 execProgram prog@(Program p defs) = do
-    let initEnv = Map.fromList
+    let initTypeCheckEnv = Map.fromList
           [(funcIdent $ Ident "printInt", [TypeInfo (TFunction [(TInt, Ident "toPrint")] TVoid (Block p [VRet p])) True p])
           , (funcIdent $ Ident "printString", [TypeInfo (TFunction [(TString, Ident "toPrint")] TVoid (Block p [VRet p])) True p])
           , (funcIdent $ Ident "printBool", [TypeInfo (TFunction [(TBool, Ident "toPrint")] TVoid (Block p [VRet p])) True p])]
-    typeCheck <- runExceptT $ runStateT (execTypeCheck p defs) initEnv
+    typeCheck <- runExceptT $ runStateT (execTypeCheck p defs) initTypeCheckEnv
     case typeCheck of
         Left error -> hPutStrLn stderr $ "type check error: " ++ error
         Right _ -> 

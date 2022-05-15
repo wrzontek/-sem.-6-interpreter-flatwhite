@@ -1,4 +1,4 @@
-FILES="../fwtests/good/*"
+FILES="../fwtests/bad/*"
 for f in $FILES.fw
 do
    ./interpreter $f
