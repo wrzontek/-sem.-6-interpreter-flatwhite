@@ -196,6 +196,7 @@ execProgram prog@(Program p defs) = do
           , (funcIdent $ Ident "printString", [TypeInfo (TFunction [(TString, Ident "toPrint")] TVoid (Block p [VRet p])) True p])
           , (funcIdent $ Ident "printBool", [TypeInfo (TFunction [(TBool, Ident "toPrint")] TVoid (Block p [VRet p])) True p])]
     typeCheck <- runExceptT $ runStateT (execTypeCheck p defs) initTypeCheckEnv
+    
     case typeCheck of
         Left error -> hPutStrLn stderr $ "type check error: " ++ error
         Right _ -> 
