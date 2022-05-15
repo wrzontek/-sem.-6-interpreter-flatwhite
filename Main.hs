@@ -45,7 +45,6 @@ run v p s =
       putStrLn err
       exitFailure
     Right tree -> do
-      putStrLn "\nParse successful\n"
       execProgram tree
       exitSuccess
   where

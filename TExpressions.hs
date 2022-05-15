@@ -27,7 +27,7 @@ getExprType (EApp p ident args) = do
 getExprType (Neg p e) = do
     t <- getExprType e
     case t of
-        TInt -> return TBool
+        TInt -> return TInt
         _ -> throwError $ "Cannot negate expression at: " ++ showPos p
 getExprType (Not p e) = do
     t <- getExprType e

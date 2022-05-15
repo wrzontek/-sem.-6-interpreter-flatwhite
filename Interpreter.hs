@@ -13,7 +13,7 @@ import TypeChecker (execTypeCheck)
 printString :: [Expr] -> BNFC'Position -> Interpreter Var
 printString [expr] p = do
     s <- evalString expr p
-    liftIO $ putStr $ show s ++ "\n"
+    liftIO $ putStr $ s ++ "\n"
     return VVoid
 printString [] p = throwError $ "no argument in print function at: " ++ showPos p
 printString exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
@@ -41,29 +41,23 @@ noInitVar (Bool _) = VBool False
 noInitVar (Void _) = VVoid
 noInitVar Fun {} = error "cannot declare function as variable"
 
-execStmt :: Stmt -> Interpreter ()
-execStmt (Decl p t []) = throwError $ "Empty declaration at " ++ showPos p
-execStmt (Decl p t [NoInit p' x]) = modify (Map.insert x (noInitVar t))
-execStmt (Decl p t [Init p' x expr]) = do
+execDecl :: BNFC'Position -> Type -> [Item] -> Interpreter ()
+execDecl p t [] = throwError $  "Empty declaration at " ++ showPos p
+execDecl p t [NoInit p' x] = modify (Map.insert x (noInitVar t))
+execDecl p t [Init p' x expr] = do
     var <- evalExpr expr
     modify (Map.insert x var)
-execStmt (Decl p t (x:xs)) = do
-    execStmt (Decl p t [x])
-    execStmt (Decl p t xs)
+execDecl p t (x:xs) = do
+    execDecl p t [x]
+    execDecl p t xs
 
-execStmt (ConstDecl p t []) = throwError $  "Empty declaration at " ++ showPos p
-execStmt (ConstDecl p t [NoInit p' x]) = modify (Map.insert x (noInitVar t))
-execStmt (ConstDecl p t [Init p' x expr]) = do
-    var <- evalExpr expr
-    modify (Map.insert x var)
-execStmt (ConstDecl p t (x:xs)) = do
-    execStmt (ConstDecl p t [x])
-    execStmt (ConstDecl p t xs)
+execStmt :: Stmt -> Interpreter ()
+execStmt (Decl p t x) = execDecl p t x
+execStmt (ConstDecl p t x) =  execDecl p t x
 
 execStmt (Empty p) = return ()
 execStmt (BStmt p (Block p' [])) = return ()
 execStmt (BStmt p (Block p' (s:sx))) = do
-    -- todo przed zrobić kopie env i po bloku przywrócić ???? 
     execStmt s
     execStmt (BStmt p (Block p' sx))
 
@@ -73,7 +67,7 @@ execStmt (Ass p ident expr) = do
         (Just v) -> do
             var <- evalExpr expr
             modify (Map.insert ident var)
-        Nothing -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at " ++ showPos p --chyba wyjdzie w TypeCheckerze ????
+        Nothing -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at " ++ showPos p
 
 execStmt (Cond p expr stmt) = do
     cond <- evalBool expr p
@@ -97,7 +91,6 @@ execStmt (For p loopVar startExpr endExpr stmt) = do
     forLoop :: Stmt -> Integer -> Integer -> Interpreter ()
     forLoop s iter end =
         when (iter <= end) $ do
-            -- todo sprawdzenie czy wolny identyfikator i czy int, tak samo pewnie w innych miejscach
             modify (Map.insert loopVar (VInt iter))
             execStmt s
             forLoop s (iter + 1) end
@@ -116,11 +109,10 @@ execStmt (VRet p) = do
 
 
 execDef :: TopDef -> Interpreter ()
-execDef (FnDef p _ f _ (Block _ [])) = throwError $ "Empty function body at: " ++ showPos p
 execDef (FnDef p retT f args block) = do
     modify (Map.insert (funcIdent f) (VFunction function))
     where
-        getFunctionArgs :: BNFC'Position -> [Arg' BNFC'Position] -> [Expr] -> Interpreter ()
+        getFunctionArgs :: BNFC'Position -> [Arg] -> [Expr] -> Interpreter ()
         getFunctionArgs p [] [] = return ()
         getFunctionArgs p [] e = throwError $ "Incorrect argument count at: " ++ showPos p
         getFunctionArgs p a [] = throwError $ "Incorrect argument count at: " ++ showPos p
@@ -180,27 +172,3 @@ execProgram prog@(Program p defs) = do
             case result of
                 Left error -> hPutStrLn stderr $ "runtime error: " ++ error
                 Right _ -> return ()
-
---   typeResult <- runExceptT $ execType program
---   case typeResult of
---     Left err -> hPutStrLn stderr $ "Type Error: " ++ err
---     Right _ -> do
---       let initStore = DataMap.fromList [(loopLocation, loopNormal)]
---       let initEnv = DataMap.empty
---       result <- runExceptT $ flip runStateT initStore $ flip runReaderT initEnv $ execStmt (SBlock d s)
---       case result of
---         Left err -> hPutStrLn stderr $ "Runtime Error: " ++ err
---         Right _ -> return ()
-
--- exec :: Program -> IO ()
--- exec program@(Program d s) = do
---   typeResult <- runExceptT $ execType program
---   case typeResult of
---     Left err -> hPutStrLn stderr $ "Type Error: " ++ err
---     Right _ -> do
---       let initStore = DataMap.fromList [(loopLocation, loopNormal)]
---       let initEnv = DataMap.empty
---       result <- runExceptT $ flip runStateT initStore $ flip runReaderT initEnv $ execStmt (SBlock d s)
---       case result of
---         Left err -> hPutStrLn stderr $ "Runtime Error: " ++ err
---         Right _ -> return ()

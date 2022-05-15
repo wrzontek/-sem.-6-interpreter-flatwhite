@@ -9,22 +9,18 @@ import Types
 import System.IO (stderr, hPutStrLn)
 import Control.Monad
 
-typeToTTypeForDecl :: Type' BNFC'Position -> BNFC'Position -> TypeChecker TType
+typeToTTypeForDecl :: Type-> BNFC'Position -> TypeChecker TType
 typeToTTypeForDecl (Int _) _ = return TInt
 typeToTTypeForDecl (Str _) _ = return TString
 typeToTTypeForDecl (Bool _) _ = return TBool
 typeToTTypeForDecl _ p = throwError $ "Cannot declare void/function variable at: " ++ showPos p
 
-typeToTTypeForReturn :: Type' BNFC'Position -> BNFC'Position -> TypeChecker TType
+typeToTTypeForReturn :: Type -> BNFC'Position -> TypeChecker TType
 typeToTTypeForReturn (Int _) _ = return TInt
 typeToTTypeForReturn (Str _) _ = return TString
 typeToTTypeForReturn (Bool _) _ = return TBool
 typeToTTypeForReturn (Void _) _ = return TVoid
 typeToTTypeForReturn _ p = throwError $ "Cannot return function at: " ++ showPos p
-
-
--- typeToTType (Fun _ ret args) = TFunction (Prelude.map typeToTType args) (typeToTType ret)
--- typeToTType (Void _) = TVoid
 
 execStmt :: Stmt -> TypeChecker ()
 execStmt (Decl p t []) = throwError $ "Empty declaration at: " ++ showPos p
@@ -136,7 +132,7 @@ execStmt (VRet p) = do
     modify (Map.insert returnValue (TypeInfo TVoid True))
     return ()
 
-argToTTypeWithIdent :: Arg' BNFC'Position -> TypeChecker (TType, Ident)
+argToTTypeWithIdent :: Arg -> TypeChecker (TType, Ident)
 argToTTypeWithIdent (Arg _ (Str _) ident) = return (TString, ident)
 argToTTypeWithIdent (Arg _ (Int _) ident) = return (TInt, ident)
 argToTTypeWithIdent (Arg _ (Bool _) ident) = return (TBool, ident)
