@@ -1,0 +1,5 @@
+make --dry-run --keep-going --print-directory
+make: Entering directory '/home/adrian/jpp/flatwhite'
+ghc --make Main.hs Interpreter.hs -o interpreter
+make: Leaving directory '/home/adrian/jpp/flatwhite'
+ 

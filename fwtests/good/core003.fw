@@ -1,0 +1,23 @@
+// Testing the return checker
+
+int f () {
+   if (true)
+     return 0;
+   else
+     return 4;
+}
+
+int g () {
+  if (false) 
+      {}
+  else
+      return 0;
+}
+
+void p () {return;}
+  
+
+int main() {
+  p();
+  return 0;
+}

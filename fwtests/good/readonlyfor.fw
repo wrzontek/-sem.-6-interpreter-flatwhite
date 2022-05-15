@@ -1,0 +1,10 @@
+
+int main() {
+  int x = 3;
+  for (i = 0 to x) {
+    printInt(i * i);
+  }
+
+  return 0;
+}
+

@@ -1,0 +1,1 @@
+{"buildTargets":["AbsFlatwhite.hs","LexFlatwhite.hs","LexFlatwhite.x","ParFlatwhite.hs","ParFlatwhite.y","PrintFlatwhite.hs","TestFlatwhite","TestFlatwhite.hs","all","clean","distclean","interpreter"],"launchTargets":[],"customConfigurationProvider":{"workspaceBrowse":{"browsePath":[],"compilerArgs":[]},"fileIndex":[]}}
