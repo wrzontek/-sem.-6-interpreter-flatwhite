@@ -6,12 +6,13 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Sun May 15 22:47:09 2022
+# Make data base, printed on Sun May 15 22:57:43 2022
 
 # Variables
 
 # 'override' directive
 GNUMAKEFLAGS := 
+ 
 # automatic
 <D = $(patsubst %/,%,$(dir $<))
 # automatic
@@ -39,7 +40,7 @@ GDMSESSION = ubuntu
 # environment
 XMODIFIERS = @im=ibus
 # makefile
-CURDIR := /home/adrian/jpp/flatwhite
+CURDIR := /home/adrian/jpp/adrian_matwiejuk
 # makefile
 SHELL = /bin/sh
 # environment
@@ -75,7 +76,7 @@ LESSOPEN = | /usr/bin/lesspipe %s
 # environment
 LC_NAME = pl_PL.UTF-8
 # environment
-VSCODE_CWD = /home/adrian
+VSCODE_CWD = /home/adrian/jpp
 # environment
 ANDROID_SDK = /home/adrian/Android/Sdk
 # default
@@ -121,7 +122,7 @@ DISPLAY = :0
 # environment
 VSCODE_PIPE_LOGGING = true
 # environment
-PWD = /home/adrian/jpp/flatwhite
+PWD = /home/adrian/jpp/adrian_matwiejuk
 # default
 .LOADED := 
 # environment
@@ -171,7 +172,7 @@ SHLVL = 1
 # environment
 GNOME_SHELL_SESSION_MODE = ubuntu
 # environment
-VSCODE_IPC_HOOK_EXTHOST = /run/user/1000/vscode-ipc-93a1263f-d5bb-4259-94ad-2b50a894de32.sock
+VSCODE_IPC_HOOK_EXTHOST = /run/user/1000/vscode-ipc-7ac3ec7b-5fe2-4c68-9e89-b3a29b52bfe7.sock
 # default
 MAKE_VERSION := 4.2.1
 # environment
@@ -188,6 +189,8 @@ XDG_CURRENT_DESKTOP = Unity
 LC_TELEPHONE = pl_PL.UTF-8
 # default
 MAKE_COMMAND := make
+# environment
+OLDPWD = /home/adrian/jpp/flatwhite
 # default
 .VARIABLES := 
 # makefile (from 'Makefile', line 10)
@@ -253,11 +256,11 @@ LANG = C
 # environment
 TERM = xterm-256color
 # environment
-VSCODE_PID = 3747
+VSCODE_PID = 9450
 # makefile (from 'Makefile', line 2)
 FILES = Main.hs Interpreter.hs
 # variable set hash-table stats:
-# Load=123/1024=12%, Rehash=0, Collisions=19/152=12%
+# Load=124/1024=12%, Rehash=0, Collisions=19/153=12%
 
 # Pattern-specific Variable Values
 
@@ -276,10 +279,10 @@ FILES = Main.hs Interpreter.hs
 	${HAPPY} ${HAPPY_OPTS} $<
 
 %.hs: %.x
- 
 #  recipe to execute (from 'Makefile', line 29):
 	${ALEX} ${ALEX_OPTS} $<
 
+ 
 # 2 implicit rules, 0 (0.0%) terminal.
 
 # Files
@@ -444,6 +447,7 @@ TestFlatwhite: AbsFlatwhite.hs LexFlatwhite.hs ParFlatwhite.hs PrintFlatwhite.hs
 #  Successfully updated.
 #  recipe to execute (from 'Makefile', line 32):
 	${GHC} ${GHC_OPTS} $@
+ 
 
 # Not a target:
 Types.hs:
@@ -498,12 +502,12 @@ LexFlatwhite.x: flatwhite.cf
 
 # No general ('VPATH' variable) search path.
 
-# strcache buffers: 1 (0) / strings = 58 / storage = 663 B / avg = 11 B
-# current buf: size = 8162 B / used = 663 B / count = 58 / avg = 11 B
+# strcache buffers: 1 (0) / strings = 58 / storage = 656 B / avg = 11 B
+# current buf: size = 8162 B / used = 656 B / count = 58 / avg = 11 B
 
 # strcache performance: lookups = 143 / hit rate = 59%
 # hash-table stats:
 # Load=58/8192=1%, Rehash=0, Collisions=1/143=1%
-# Finished Make data base on Sun May 15 22:47:09 2022
+# Finished Make data base on Sun May 15 22:57:43 2022
 
  

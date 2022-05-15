@@ -1,5 +1,14 @@
-make --dry-run --keep-going --print-directory
-make: Entering directory '/home/adrian/jpp/flatwhite'
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory '/home/adrian/jpp/adrian_matwiejuk'
+bnfc --haskell --functor flatwhite.cf
+bnfc --haskell --functor flatwhite.cf
+alex --ghc LexFlatwhite.x
+ 
+bnfc --haskell --functor flatwhite.cf
+happy --array --info --ghc --coerce ParFlatwhite.y
+bnfc --haskell --functor flatwhite.cf
+bnfc --haskell --functor flatwhite.cf
+ghc  TestFlatwhite
 ghc --make Main.hs Interpreter.hs -o interpreter
-make: Leaving directory '/home/adrian/jpp/flatwhite'
+make: Leaving directory '/home/adrian/jpp/adrian_matwiejuk'
  
