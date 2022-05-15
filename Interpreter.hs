@@ -9,6 +9,7 @@ import Types
 import System.IO (stderr, hPutStrLn)
 import Control.Monad
 import TypeChecker (execTypeCheck)
+import Text.XHtml (yellow)
 
 printString :: [Expr] -> BNFC'Position -> Interpreter Var
 printString [expr] p = do
@@ -41,76 +42,114 @@ noInitVar (Bool _) = VBool False
 noInitVar (Void _) = VVoid
 noInitVar Fun {} = error "cannot declare function as variable"
 
-execDecl :: BNFC'Position -> Type -> [Item] -> Interpreter ()
-execDecl p t [] = throwError $  "Empty declaration at " ++ showPos p
-execDecl p t [NoInit p' x] = modify (Map.insert x (noInitVar t))
-execDecl p t [Init p' x expr] = do
+mapInsertOrAppend :: Ident -> Var -> BlockPos -> Interpreter ()
+mapInsertOrAppend ident var b = do
+    varMap <- get
+    case Map.lookup ident varMap of
+        Nothing -> modify (Map.insert ident [(var, b)])
+        Just vs -> modify (Map.insert ident ((var, b):vs))
+
+execDecl :: BlockPos -> BNFC'Position -> Type -> [Item] -> Bool -> Interpreter ()
+execDecl _ p t [] ro = throwError $  "Empty declaration at " ++ showPos p
+execDecl b p t [NoInit p' x] ro = mapInsertOrAppend x (noInitVar t) b
+execDecl b p t [Init p' x expr] ro = do
     var <- evalExpr expr
-    modify (Map.insert x var)
-execDecl p t (x:xs) = do
-    execDecl p t [x]
-    execDecl p t xs
+    mapInsertOrAppend x var b
 
-execStmt :: Stmt -> Interpreter ()
-execStmt (Decl p t x) = execDecl p t x
-execStmt (ConstDecl p t x) =  execDecl p t x
+execDecl b p t (x:xs) ro = do
+    execDecl b p t [x] ro
+    execDecl b p t xs ro
 
-execStmt (Empty p) = return ()
-execStmt (BStmt p (Block p' [])) = return ()
-execStmt (BStmt p (Block p' (s:sx))) = do
-    execStmt s
-    execStmt (BStmt p (Block p' sx))
+execStmts :: BlockPos -> [Stmt] -> Interpreter ()
+execStmts _ [] = return ()
+execStmts b (s:sx) = do
+        execStmt b s
+        env <- get
+        case Map.lookup returnValue env of
+            Nothing -> execStmts b sx
+            Just _ -> return ()
 
-execStmt (Ass p ident expr) = do
-    vars <- get
-    case Map.lookup ident vars of
-        (Just v) -> do
-            var <- evalExpr expr
-            modify (Map.insert ident var)
-        Nothing -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at " ++ showPos p
+execStmt :: BlockPos -> Stmt -> Interpreter ()
+execStmt b (Decl p t x) = execDecl b p t x False
+execStmt b (ConstDecl p t x) =  execDecl b p t x True
 
-execStmt (Cond p expr stmt) = do
+execStmt _ (Empty p) = return ()
+execStmt _ (BStmt p (Block p' [])) = return ()
+execStmt b (BStmt p (Block newBlock stmts)) = do
+    execStmts newBlock stmts
+    modify (Map.fromList . Prelude.map (removeInnerDeclarations newBlock) . toList)
+    where
+        removeInnerDeclarations :: BlockPos -> (Ident, [(Var, BlockPos)]) -> (Ident, [(Var, BlockPos)])
+        removeInnerDeclarations b (ident, ds) = (ident, cutOutBlockDeclarations ds b)
+
+        cutOutBlockDeclarations :: [(Var, BlockPos)] -> BlockPos -> [(Var, BlockPos)]
+        cutOutBlockDeclarations [] _ = []
+        cutOutBlockDeclarations (vi@(v, x) : xs) y
+            | x == y = cutOutBlockDeclarations xs y
+            | otherwise = vi : cutOutBlockDeclarations xs y
+
+execStmt _ (Ass p ident expr) = do
+    var <- evalExpr expr
+    env <- get
+    case Map.lookup ident env of
+        Just ((_, b') : vs) -> modify (Map.insert ident ((var, b') : vs))
+        _ -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at " ++ showPos p
+
+execStmt b (Cond p expr stmt) = do
     cond <- evalBool expr p
-    when cond $ execStmt stmt
+    when cond $ execStmt b stmt
 
-execStmt (CondElse p expr stmt1 stmt2) = do
+execStmt b (CondElse p expr stmt1 stmt2) = do
     cond <- evalBool expr p
-    if cond then execStmt stmt1 else execStmt stmt2
+    if cond then execStmt b stmt1 else execStmt b stmt2
 
-execStmt w@(While p expr stmt) = do
+-- execStmt b w@(While p expr (BStmt _ (Block _ stmts))) = do
+execStmt b w@(While p expr stmt) = do
     cond <- evalBool expr p
     when cond $ do
-        execStmt stmt
-        execStmt w
+        execStmt b stmt
+        execStmt b w
 
-execStmt (For p loopVar startExpr endExpr stmt) = do
+execStmt b (For p loopVar startExpr endExpr stmt) = do
     startVal <- evalInteger startExpr p
     endVal <- evalInteger endExpr p
-    forLoop stmt startVal endVal
-    where
+    env <- get
+    case Map.lookup loopVar env of
+        Just ds@(d:_) -> case d of
+            (_, b') -> when (b == b') $ throwError $  "Redeclaration at: " ++ showPos p
+        _ -> return ()
+
+    forLoop stmt startVal endVal where
+
     forLoop :: Stmt -> Integer -> Integer -> Interpreter ()
     forLoop s iter end =
         when (iter <= end) $ do
-            modify (Map.insert loopVar (VInt iter))
-            execStmt s
+            setIterator (VInt iter)
+            execStmt b s
             forLoop s (iter + 1) end
 
-execStmt (SExp p expr) = do
+    setIterator :: Var -> Interpreter ()
+    setIterator iterVal = do
+        env <- get
+        case Map.lookup loopVar env of
+            Just (y:ys) -> modify (Map.insert loopVar ((iterVal, b):ys))
+            _ -> modify (Map.insert loopVar [(iterVal, b)])
+
+execStmt b (SExp p expr) = do
     evalExpr expr
     return ()
 
-execStmt (Ret p expr) = do
+execStmt b (Ret p expr) = do
     var <- evalExpr expr
-    modify (Map.insert returnValue var)
+    modify (Map.insert returnValue [(var, returnBlockPos)])
     return ()
-execStmt (VRet p) = do
-    modify (Map.insert returnValue VVoid)
+execStmt b (VRet p) = do
+    modify (Map.insert returnValue [(VVoid, returnBlockPos)])
     return ()
-
 
 execDef :: TopDef -> Interpreter ()
 execDef (FnDef p retT f args block) = do
-    modify (Map.insert (funcIdent f) (VFunction function))
+    modify (Map.insert (funcIdent f) [(VFunction function, p)])
     where
         getFunctionArgs :: BNFC'Position -> [Arg] -> [Expr] -> Interpreter ()
         getFunctionArgs p [] [] = return ()
@@ -120,13 +159,13 @@ execDef (FnDef p retT f args block) = do
             v <- evalExpr e
             case (a,v) of
                 (Arg _ (Int _) ident, VInt v) -> do
-                    modify (Map.insert ident (VInt v))
+                    mapInsertOrAppend ident (VInt v) p
                     getFunctionArgs p as es
                 (Arg _ (Str _) ident, VString v) -> do
-                    modify (Map.insert ident (VString v))
+                    mapInsertOrAppend ident (VString v) p
                     getFunctionArgs p as es
                 (Arg _ (Bool _) ident, VBool v) -> do
-                    modify (Map.insert ident (VBool v))
+                    mapInsertOrAppend ident (VBool v) p
                     getFunctionArgs p as es
                 (Arg _ _ ident, _) -> throwError $ "Incorrect argument type for argument: " ++ show ident ++ " at: " ++ showPos p
 
@@ -135,12 +174,12 @@ execDef (FnDef p retT f args block) = do
             initialEnv <- get
             modify (Map.delete returnValue)
             getFunctionArgs p' args xs
-            execStmt (BStmt p' block)
+            execStmt p' (BStmt p' block)
             postStmtsEnv <- get
             modify (const initialEnv) -- returning to original, pre-function-call environment
             case Map.lookup returnValue postStmtsEnv of
-                Nothing -> throwError $ "Function: " ++ show f ++ " didn't call return at: " ++ showPos p'
-                (Just rVal) -> return rVal
+                (Just ((rVal, _):_)) -> return rVal
+                _ -> throwError $ "Function: " ++ show f ++ " didn't call return at: " ++ showPos p'
 
 execDefs :: [TopDef] -> Interpreter()
 execDefs [] = return ()
@@ -153,20 +192,24 @@ execDefsThenMain p defs = do
     execDefs defs
     env <- get
     case Map.lookup (funcIdent $ Ident "main") env of
-        (Just (VFunction f)) -> do
+        (Just ((VFunction f, _):_)) -> do
             f [] p
             return ()
         _ -> throwError "No 'main' function defined"
 
 
 execProgram :: Program -> IO ()
--- execProgram prog@(Program p def@[FnDef p' t f _ s]) = do
 execProgram prog@(Program p defs) = do
-    typeCheck <- runExceptT $ runStateT (execTypeCheck p defs) Map.empty
+    let initEnv = Map.fromList
+          [(funcIdent $ Ident "printInt", [TypeInfo (TFunction [(TInt, Ident "toPrint")] TVoid (Block p [VRet p])) True p])
+          , (funcIdent $ Ident "printString", [TypeInfo (TFunction [(TString, Ident "toPrint")] TVoid (Block p [VRet p])) True p])
+          , (funcIdent $ Ident "printBool", [TypeInfo (TFunction [(TBool, Ident "toPrint")] TVoid (Block p [VRet p])) True p])]
+    typeCheck <- runExceptT $ runStateT (execTypeCheck p defs) initEnv
     case typeCheck of
         Left error -> hPutStrLn stderr $ "type check error: " ++ error
-        Right _ -> do
-            let initEnv = Map.fromList [(funcIdent $ Ident "printInt", VFunction printInt), (funcIdent $ Ident "printString", VFunction printString), (funcIdent $ Ident "printBool", VFunction printBool)]
+        Right _ -> 
+            do
+            let initEnv = Map.fromList [(funcIdent $ Ident "printInt", [(VFunction printInt, p)]), (funcIdent $ Ident "printString", [(VFunction printString, p)]), (funcIdent $ Ident "printBool", [(VFunction printBool, p)])]
             result <- runExceptT $ runStateT (execDefsThenMain p defs) initEnv
 
             case result of

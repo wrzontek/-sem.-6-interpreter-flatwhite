@@ -54,15 +54,15 @@ evalExpr (ELitFalse _) = return (VBool False)
 evalExpr (EVar p ident) = do
     vars <- get
     case Map.lookup ident vars of
-        Just (VFunction _) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
-        Just v -> return v
+        Just ((VFunction _, _):_) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
+        Just ((v, _):_) -> return v
         _ -> throwError $ "Undefined variable " ++ show ident ++ " at: " ++ showPos p
 
 evalExpr (EApp p ident args) = do
     vars <- get
     case Map.lookup (funcIdent ident) vars of
-        Just (VFunction f) -> f args p
-        _ -> throwError $ "Undefined function" ++ show ident ++ " at: " ++ showPos p
+        Just ((VFunction f, _):_) -> f args p
+        _ -> throwError $ "Undefined function " ++ show ident ++ " at: " ++ showPos p
 
 evalExpr (Neg p e) = do
     e' <- evalExpr e
@@ -78,9 +78,12 @@ evalExpr (Not p e) = do
 evalExpr (EMul p e1 op e2) = do
     e1' <- evalExpr e1
     e2' <- evalExpr e2
-    case (e1', e2') of
-        (VInt a, VInt b) -> return (VInt $ mulOpToFunction op a b)
-        _ -> throwError $ "Integer operation on non-integer at: " ++ showPos p
+    case (op, e2') of 
+        (Div _, VInt 0) -> throwError $ "Division by 0 at: " ++ showPos p
+        (Mod _, VInt 0) -> throwError $ "Modulo 0 at: " ++ showPos p
+        _ -> case (e1', e2') of
+                (VInt a, VInt b) -> return (VInt $ mulOpToFunction op a b)
+                _ -> throwError $ "Integer operation on non-integer at: " ++ showPos p
 
 evalExpr (EAdd p e1 (Plus _) e2) = do
     e1' <- evalExpr e1

@@ -15,7 +15,7 @@ getExprType (EVar p ident) = do
     vars <- get
     case Map.lookup ident vars of
         Just (x:_) -> case x of
-            (TypeInfo (TFunction _) _ _) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
+            (TypeInfo TFunction {} _ _) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
             (TypeInfo t _ _) -> return t
         _ -> throwError $ "Undefined variable " ++ show ident ++ " at: " ++ showPos p
 
@@ -23,9 +23,18 @@ getExprType (EApp p ident args) = do
     vars <- get
     case Map.lookup (funcIdent ident) vars of
         Just (x:_) -> case x of
-            (TypeInfo (TFunction f) _ _) -> f args p
-            _ -> throwError $ "Undefined function" ++ show ident ++ " at: " ++ showPos p
-        _ -> throwError $ "Undefined function" ++ show ident ++ " at: " ++ showPos p
+            (TypeInfo (TFunction argTypes retT _) _ _) -> do
+                if length args /= length argTypes 
+                    then throwError $ "Incorrect argument count for function: " ++ show ident ++ " at: " ++ showPos p
+                    else do
+                    argTypes' <- mapM getExprType args
+                    if argTypes' == map argToTTypeWithIdentToArgType argTypes 
+                        then return retT
+                        else throwError $ "Incorrect argument type for function: " ++ show ident ++ " at: " ++ showPos p
+            _ -> throwError $ "Undefined function " ++ show ident ++ " at: " ++ showPos p
+        _ -> throwError $ "Undefined function " ++ show ident ++ " at: " ++ showPos p
+    where
+        argToTTypeWithIdentToArgType (t, _) = t
 
 getExprType (Neg p e) = do
     t <- getExprType e

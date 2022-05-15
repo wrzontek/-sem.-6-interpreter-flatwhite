@@ -9,8 +9,30 @@ import Types
 import System.IO (stderr, hPutStrLn)
 import Control.Monad
 
-returnBlockPos :: BlockPos
-returnBlockPos = BNFC'Position (-2) (-2)  -- will not be equal to any other position in program
+-- tPrintString :: [Expr] -> BNFC'Position -> TypeChecker TType
+-- tPrintString [expr] p = do
+--     s <- evalString expr p
+--     liftIO $ putStr $ s ++ "\n"
+--     return VVoid
+-- tPrintString [] p = throwError $ "no argument in print function at: " ++ showPos p
+-- tPrintString exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
+
+-- tPrintInt :: [Expr] -> BNFC'Position -> TypeChecker TType
+-- tPrintInt [expr] p = do
+--     n <- evalInteger expr p
+--     liftIO $ putStr $ show n ++ "\n"
+--     return VVoid
+-- tPrintInt [] p = throwError $ "no argument in print function at: " ++ showPos p
+-- tPrintInt exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
+
+-- printBool :: [Expr] -> BNFC'Position -> TypeChecker TType
+-- printBool [expr] p = do
+--     b <- evalBool expr p
+--     liftIO $ putStr $ show b ++ "\n"
+--     return VVoid
+-- printBool [] p = throwError $ "no argument in print function at: " ++ showPos p
+-- printBool exprs p = throwError $ "multiple arguments in print function at: " ++ showPos p
+
 
 safeHead :: [BlockPos] -> BlockPos
 safeHead [] = BNFC'Position (-1) (-1) -- will not be equal to any actual position in program
@@ -63,39 +85,37 @@ execDecl b p t (x:xs) ro = do
     execDecl b p t [x] ro
     execDecl b p t xs ro
 
-execStmts :: BlockPos -> [Stmt] -> TypeChecker ()
-execStmts _ [] = return ()
-execStmts b (s:sx) = do
-        execStmt b s
-        execStmts b sx
+checkStmts :: BlockPos -> [Stmt] -> TypeChecker ()
+checkStmts _ [] = return ()
+checkStmts b (s:sx) = do
+    checkStmt b s
+    env <- get
+    case Map.lookup returnValue env of
+        Nothing -> checkStmts b sx
+        Just _ -> return ()
 
-execStmt :: BlockPos -> Stmt -> TypeChecker ()
-execStmt b (Decl p t x) = execDecl b p t x False
-execStmt b (ConstDecl p t x) = execDecl b p t x True
+checkStmt :: BlockPos -> Stmt -> TypeChecker ()
+checkStmt b (Decl p t x) = execDecl b p t x False
+checkStmt b (ConstDecl p t x) = execDecl b p t x True
 
-execStmt _ (Empty p) = return ()
-execStmt _ (BStmt p (Block p' [])) = return ()
-execStmt b (BStmt p (Block newBlock stmts)) = do
-    execStmts newBlock stmts
+checkStmt _ (Empty p) = return ()
+checkStmt _ (BStmt p (Block p' [])) = return ()
+checkStmt b (BStmt p (Block newBlock stmts)) = do
+    modify (Map.delete returnValue)
+    checkStmts newBlock stmts
     modify (Map.fromList . Prelude.map (removeInnerDeclarations newBlock) . toList)
     where
         removeInnerDeclarations :: BlockPos -> (Ident, [TypeInfo]) -> (Ident, [TypeInfo])
-        removeInnerDeclarations b (ident, ts) = (ident, cutFrom ts b)
+        removeInnerDeclarations b (ident, ts) = (ident, cutOutBlockDeclarations ts b)
 
-        cutFrom :: [TypeInfo] -> BlockPos -> [TypeInfo]
-        cutFrom [] _ = []
-        cutFrom tis@((TypeInfo (TFunction _) _ x) : xs) y = tis
-        cutFrom (ti@(TypeInfo _ _ x) : xs) y
-            | x == returnBlockPos = ti : cutFrom xs y
-            | x == y = xs
-            | otherwise = cutFrom xs y
-        -- cutTo :: [TypeInfo] -> BlockPos -> [TypeInfo]
-        -- cutTo [] _ = []
-        -- cutTo (ti@(TypeInfo _ _ x) : xs) y
-        --     | x == y = [ti]
-        --     | otherwise = ti : cutTo xs y
+        cutOutBlockDeclarations :: [TypeInfo] -> BlockPos -> [TypeInfo]
+        cutOutBlockDeclarations [] _ = []
+        cutOutBlockDeclarations tis@((TypeInfo TFunction {} _ x) : xs) y = tis
+        cutOutBlockDeclarations (ti@(TypeInfo _ _ x) : xs) y
+            | x == y = cutOutBlockDeclarations xs y
+            | otherwise = ti : cutOutBlockDeclarations xs y
 
-execStmt b (Ass p ident expr) = do
+checkStmt b (Ass p ident expr) = do
     vars <- get
     case Map.lookup ident vars of
         Just (x:_) -> case x of
@@ -105,49 +125,53 @@ execStmt b (Ass p ident expr) = do
             (TypeInfo _ True _) -> throwError $ "Assignment to readonly variable: " ++ show ident ++ " at: " ++ showPos p
         _ -> throwError $ "Assignment to undeclared variable: " ++ show ident ++ " at: " ++ showPos p
 
-execStmt b (Cond p expr stmt) = do
+checkStmt b (Cond p expr stmt) = do
     cond <- getExprType expr
     case cond of
-      TBool -> execStmt b stmt
+      TBool -> checkStmt b stmt
       _ -> throwError $ "Non-boolean condition at: " ++ showPos p
 
-execStmt b (While p expr stmt) = do
+checkStmt b (While p expr stmt) = do
     cond <- getExprType expr
     case cond of
-      TBool -> execStmt b stmt
+      TBool -> checkStmt b stmt
       _ -> throwError $ "Non-boolean condition at: " ++ showPos p
 
-execStmt b (CondElse p expr stmt1 stmt2) = do
+checkStmt b (CondElse p expr stmt1 stmt2) = do
     cond <- getExprType expr
     case cond of
       TBool -> do
           initialEnv <- get
-          execStmt b stmt1
+          checkStmt b stmt1
           modify (const initialEnv)
-          execStmt b stmt2
+          checkStmt b stmt2
       _ -> throwError $ "Non-boolean condition at: " ++ showPos p
 
-execStmt b (For p loopVar startExpr endExpr stmt) = do
+checkStmt b (For p loopVar startExpr endExpr stmt) = do
     env <- get
+    startVal <- getExprType startExpr
+    endVal <- getExprType endExpr
     case Map.lookup loopVar env of
-        Nothing -> do
-            startVal <- getExprType startExpr
-            endVal <- getExprType endExpr
-            case (startVal, endVal) of
-                (TInt, TInt) -> do
-                    modify (Map.insert loopVar [TypeInfo TInt True b])
-                    execStmt b stmt
-                _ -> throwError $ "Non-integer for range at: " ++ showPos p
-        _ -> throwError $ "Redeclaration at: " ++ showPos p
+        Just ds@(d:_) -> case d of
+            TypeInfo _ _ b' -> if b == b'
+                then throwError $  "Redeclaration at: " ++ showPos p
+                else do
+                    modify (Map.insert loopVar (TypeInfo TInt True b : ds))
+                    checkStmt b stmt
+        _ -> do
+            modify (Map.insert loopVar [TypeInfo TInt True b])
+            checkStmt b stmt
 
-execStmt b (SExp p expr) = return ()
+checkStmt b (SExp p expr) = do 
+    getExprType expr
+    return ()
 
-execStmt b (Ret p expr) = do
+checkStmt b (Ret p expr) = do
     var <- getExprType expr
     modify (Map.insert returnValue [TypeInfo var True returnBlockPos])
     return ()
 
-execStmt b (VRet p) = do
+checkStmt b (VRet p) = do
     modify (Map.insert returnValue [TypeInfo TVoid True returnBlockPos])
     return ()
 
@@ -163,62 +187,51 @@ execDef (FnDef fPos retT f args block) = do
     funcEnv <- get
     case Map.lookup f funcEnv of
         Just ds@(d:_) -> throwError $  "Function redefinition at: " ++ showPos fPos
-            -- case d of
-            -- TypeInfo _ _ b' -> if fPos == b'
-            --     then throwError $  "Function Redefiniction at: " ++ showPos fPos
-            --     else do
-            --         modify (Map.insert (funcIdent f) (TypeInfo (TFunction function) True fPos : ds))
-        _ -> modify (Map.insert (funcIdent f) [TypeInfo (TFunction function) True fPos])
-
-    where
-        checkFunctionArgs :: BNFC'Position -> [(TType, Ident)] -> [Expr] -> TypeChecker ()
-        checkFunctionArgs p [] [] = return ()
-        checkFunctionArgs p [] e = throwError $ "Incorrect argument count at: " ++ showPos p
-        checkFunctionArgs p a [] = throwError $ "Incorrect argument count at: " ++ showPos p
-        checkFunctionArgs p ((argType, argIdent):as) (e:es) = do
-            vars <- get
-            t <- getExprType e
-            if argType == t
-                then case Map.lookup argIdent vars of
-                    Just ds@(d:_) -> case d of
-                        TypeInfo _ _ b' -> if p == b'
-                                then throwError $  "Redeclaration at: " ++ showPos p
-                                else do
-                                    modify (Map.insert argIdent (TypeInfo t False p : ds))
-                                    checkFunctionArgs p as es
-                    _ -> do
-                        modify (Map.insert argIdent [TypeInfo t False p])
-                        checkFunctionArgs p as es
-                else
-                    throwError $ "Incorrect argument type for argument: " ++ show argIdent ++ " at: " ++ showPos p
-
-        function :: [Expr] -> BNFC'Position -> TypeChecker TType
-        function xs p' = do
-            initialEnv <- get
-            modify (Map.delete returnValue)
-            argTypes <- mapM argToTTypeWithIdent args
-            checkFunctionArgs p' argTypes xs
-            execStmt p' (BStmt p' block)
-            postStmtsEnv <- get
-            modify (const initialEnv) -- returning to original, pre-function-call environment
-            case Map.lookup returnValue postStmtsEnv of
-                (Just ((TypeInfo retT' _ _):_)) ->  do
-                    retT <- typeToTTypeForReturn retT p'
-                    if retT == retT' then return retT' else throwError $ "Incorrect return type from function call at " ++ showPos p'
-                _ -> throwError $ "Function: " ++ show f ++ " doesn't return"
+        _ -> do
+            argTypesWithIdents <- mapM argToTTypeWithIdent args
+            retT <- typeToTTypeForReturn retT fPos
+            modify (Map.insert (funcIdent f) [TypeInfo (TFunction argTypesWithIdents retT block) True fPos])
 
 execDefs :: [TopDef] -> TypeChecker ()
 execDefs [] = return ()
 execDefs (d:ds) = do
     execDef d
-    execDefs ds    
+    execDefs ds
+
+declareCorrectArgs :: BNFC'Position -> [(TType, Ident)] -> TypeChecker ()
+declareCorrectArgs _ [] = return ()
+declareCorrectArgs b ((t,ident):args) = do
+    modify (Map.insert ident [TypeInfo t False b])
+    declareCorrectArgs b args
+
+clearNonFunctions :: Map Ident [TypeInfo] -> Map Ident [TypeInfo]
+clearNonFunctions typeMap = Map.fromList $ go (Map.toList typeMap) where
+    go [] = []
+    go ((f, t):xs) = (f, Prelude.filter isFunction t) : go xs
+
+    isFunction (TypeInfo TFunction {} _ _) = True
+    isFunction _ = False
+
+checkAllFunctions :: BNFC'Position -> [(Ident, [TypeInfo])] -> TypeChecker ()
+checkAllFunctions b [] = return ()
+checkAllFunctions b ((fIdent, [TypeInfo (TFunction args retT block) _ p]) : fs) = do
+    modify clearNonFunctions
+    declareCorrectArgs b args
+    checkStmt p (BStmt p block)
+    postStmtsEnv <- get
+    case Map.lookup returnValue postStmtsEnv of
+        (Just ((TypeInfo retT' _ _):_)) ->  if retT == retT'
+            then checkAllFunctions b fs
+            else throwError $ "Incorrect return type from function " ++ show fIdent
+        _ -> throwError $ "Function: " ++ show fIdent ++ " doesn't return"
+
+checkAllFunctions _ _ = error "defined non-function as function" -- should never happen, just for pattern-matching purpuses
+
 
 execTypeCheck :: BNFC'Position -> [TopDef] -> TypeChecker ()
 execTypeCheck p defs = do
     execDefs defs
     env <- get
     case Map.lookup (funcIdent $ Ident "main") env of
-        (Just ((TypeInfo (TFunction f) _ _):_)) -> do
-            f [] p
-            return ()
-        _ -> throwError "No 'main' function defined"    
+        Just _ -> checkAllFunctions p $ Map.toList env
+        _ -> throwError "No 'main' function defined"

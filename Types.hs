@@ -30,14 +30,14 @@ instance Show Var where
   show VVoid = "void"
 
 type ExceptionT = ExceptT String IO
-type InterpreterEnv = Map.Map Ident Var
+type InterpreterEnv = Map.Map Ident [(Var, BlockPos)] -- idents to Var list (mutliple nested declarations)
 type Interpreter = StateT InterpreterEnv ExceptionT
 
 data TType  = -- Type but without pos as it's not needed
     TInt
     | TBool
     | TString
-    | TFunction ([Expr] -> BNFC'Position -> TypeChecker TType)
+    | TFunction [(TType, Ident)] TType Block
     | TVoid
 
 instance Eq TType where
@@ -51,7 +51,7 @@ type BlockPos = BNFC'Position
 
 data TypeInfo = TypeInfo TType Bool BlockPos -- variable type, whether or not it's readonly and the block it was declared in
 
-type TypeCheckerEnv = Map.Map Ident [TypeInfo] -- map of idents to TypeInfo list (mutliple nested declarations)
+type TypeCheckerEnv = Map.Map Ident [TypeInfo] -- idents to TypeInfo list (mutliple nested declarations)
 type TypeChecker = StateT TypeCheckerEnv ExceptionT
 
 showPos :: BNFC'Position -> [Char]
@@ -59,4 +59,7 @@ showPos (Just x) = show x
 showPos _ = "?"
 
 funcIdent :: Ident -> Ident -- so variable names dont conflict with function names
-funcIdent (Ident f) = Ident $ "__function__" ++ f ++ "__"
+funcIdent (Ident f) = Ident $ "__function__" ++ f
+
+returnBlockPos :: BlockPos
+returnBlockPos = BNFC'Position (-2) (-2)  -- will not be equal to any other position in program
