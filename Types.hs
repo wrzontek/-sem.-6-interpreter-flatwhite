@@ -47,9 +47,11 @@ instance Eq TType where
   TVoid == TVoid = True
   _ == _ = False
 
-data TypeInfo = TypeInfo TType Bool -- variable type and whether or not it's readonly
+type BlockPos = BNFC'Position
 
-type TypeCheckerEnv = Map.Map Ident TypeInfo
+data TypeInfo = TypeInfo TType Bool BlockPos -- variable type, whether or not it's readonly and the block it was declared in
+
+type TypeCheckerEnv = Map.Map Ident [TypeInfo] -- map of idents to TypeInfo list (mutliple nested declarations)
 type TypeChecker = StateT TypeCheckerEnv ExceptionT
 
 showPos :: BNFC'Position -> [Char]

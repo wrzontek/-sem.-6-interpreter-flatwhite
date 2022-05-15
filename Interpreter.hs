@@ -137,7 +137,7 @@ execDef (FnDef p retT f args block) = do
             getFunctionArgs p' args xs
             execStmt (BStmt p' block)
             postStmtsEnv <- get
-            modify (\_ -> initialEnv) -- returning to original, pre-function-call environment
+            modify (const initialEnv) -- returning to original, pre-function-call environment
             case Map.lookup returnValue postStmtsEnv of
                 Nothing -> throwError $ "Function: " ++ show f ++ " didn't call return at: " ++ showPos p'
                 (Just rVal) -> return rVal

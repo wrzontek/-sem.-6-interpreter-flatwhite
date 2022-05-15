@@ -14,14 +14,17 @@ getExprType (ELitFalse _) = return TBool
 getExprType (EVar p ident) = do
     vars <- get
     case Map.lookup ident vars of
-        Just (TypeInfo (TFunction _) _) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
-        Just (TypeInfo t _) -> return t
+        Just (x:_) -> case x of
+            (TypeInfo (TFunction _) _ _) -> throwError $ "Attempt to eval function as variable at: " ++ showPos p
+            (TypeInfo t _ _) -> return t
         _ -> throwError $ "Undefined variable " ++ show ident ++ " at: " ++ showPos p
 
 getExprType (EApp p ident args) = do
     vars <- get
     case Map.lookup (funcIdent ident) vars of
-        Just (TypeInfo (TFunction f) _) -> f args p 
+        Just (x:_) -> case x of
+            (TypeInfo (TFunction f) _ _) -> f args p
+            _ -> throwError $ "Undefined function" ++ show ident ++ " at: " ++ showPos p
         _ -> throwError $ "Undefined function" ++ show ident ++ " at: " ++ showPos p
 
 getExprType (Neg p e) = do
